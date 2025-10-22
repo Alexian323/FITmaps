@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fitmaps/config/theme.dart';
-import 'package:fitmaps/screens/login_screen.dart';
+// import 'package:fitmaps/screens/login_screen.dart'; // Commented out - navigating to splash instead
+import 'package:fitmaps/screens/splash_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -22,7 +23,7 @@ class ProfileScreen extends StatelessWidget {
               Navigator.pop(context);
               Navigator.pushAndRemoveUntil(
                 context,
-                MaterialPageRoute(builder: (context) => LoginScreen()),
+                MaterialPageRoute(builder: (context) => SplashScreen()),
                 (route) => false,
               );
             },

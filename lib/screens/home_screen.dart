@@ -1,11 +1,9 @@
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:fitmaps/config/theme.dart';
 import 'package:fitmaps/screens/profile_screen.dart';
-// import 'package:fitmaps/screens/login_screen.dart'; // Commented out - navigating to splash instead
 import 'package:fitmaps/screens/splash_screen.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'dart:convert';
+import 'dart:math' as math;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,68 +16,106 @@ class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
   String? _selectedFloor;
   bool _isSearching = false;
-  bool _showMap = false;
-
-  // Interactive map features
-  List<LatLng> _pathPoints = [];
-  LatLng? _userLocation;
-  List<LatLng> _routePath = [];
-
-  void _handleLogout() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Logout'),
-        content: Text('Are you sure you want to logout?'),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(
-                    builder: (context) =>
-                        SplashScreen()), // Navigate to splash instead of login
-                (route) => false,
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: Text('Logout'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  final List<String> _floors = [
-    'Basement -2',
-    'Basement -1',
-    '1ˢᵗ Floor',
-    '2ⁿᵈ Floor',
-    '3ʳᵈ Floor',
-    '4ᵗʰ Floor',
-  ];
-
-  final Map<String, String> _floorAssets = {
-    'Basement -2': 'assets/floors/-2stfloor.svg',
-    'Basement -1': 'assets/floors/-1stfloor.svg',
-    '1ˢᵗ Floor': 'assets/floors/1stfloor.svg',
-    '2ⁿᵈ Floor': 'assets/floors/2ndfloor.svg',
-    '3ʳᵈ Floor': 'assets/floors/3rdfloor.svg',
-    '4ᵗʰ Floor': 'assets/floors/4thfloor.svg',
-  };
+  List<Map<String, dynamic>> _roomData = [];
 
   @override
   void initState() {
     super.initState();
-    // Set 1st Floor as default
     _selectedFloor = '1ˢᵗ Floor';
-    _showMap = true;
+    _loadRoomData();
+  }
+
+  double _mapMinX = 0;
+  double _mapMaxX = 640;
+  double _mapMinY = 0;
+  double _mapMaxY = 920;
+
+  Future<void> _loadRoomData() async {
+    try {
+      // Load room data from JSON file
+      final jsonString = await DefaultAssetBundle.of(context)
+          .loadString('data/parsed_data/maps_data.json');
+      final List<dynamic> allRooms = json.decode(jsonString);
+
+      // Filter rooms for current floor
+      String currentFloor;
+      switch (_selectedFloor) {
+        case '1ˢᵗ Floor':
+          currentFloor = '+1';
+          break;
+        case '2ⁿᵈ Floor':
+          currentFloor = '+2';
+          break;
+        case '3ʳᵈ Floor':
+          currentFloor = '+3';
+          break;
+        case '-1ˢᵗ Floor':
+          currentFloor = '-1';
+          break;
+        case '-2ⁿᵈ Floor':
+          currentFloor = '-2';
+          break;
+        default:
+          currentFloor = '+1';
+      }
+
+      // Extract room data for current floor and calculate bounds
+      final floorRooms = <Map<String, dynamic>>[];
+      double minX = double.infinity;
+      double maxX = double.negativeInfinity;
+      double minY = double.infinity;
+      double maxY = double.negativeInfinity;
+
+      for (final roomEntry in allRooms) {
+        if (roomEntry is Map<String, dynamic>) {
+          for (final entry in roomEntry.entries) {
+            final roomId = entry.key;
+            final roomData = entry.value as Map<String, dynamic>;
+            if (roomData['floor_no']?.toString() == currentFloor) {
+              final coords = roomData['coords'] ?? [];
+
+              // Calculate bounds for this room
+              for (final coord in coords) {
+                if (coord is List<dynamic> && coord.length >= 2) {
+                  final x = (coord[0] as num).toDouble();
+                  final y = (coord[1] as num).toDouble();
+
+                  minX = math.min(minX, x);
+                  maxX = math.max(maxX, x);
+                  minY = math.min(minY, y);
+                  maxY = math.max(maxY, y);
+                }
+              }
+
+              floorRooms.add({
+                'id': roomId,
+                'title': roomData['title'] ?? '',
+                'coords': coords,
+                'room_tag': roomData['room_tag'] ?? '',
+              });
+            }
+          }
+        }
+      }
+
+      // Set map bounds with some padding
+      setState(() {
+        _roomData = floorRooms;
+        _mapMinX = minX - 50; // Add padding
+        _mapMaxX = maxX + 50; // Add padding
+        _mapMinY = minY - 50; // Add padding
+        _mapMaxY = maxY + 50; // Add padding
+      });
+
+      print('Loaded ${_roomData.length} rooms for floor $currentFloor');
+      print(
+          'Map bounds: X(${_mapMinX.toStringAsFixed(1)} - ${_mapMaxX.toStringAsFixed(1)}), Y(${_mapMinY.toStringAsFixed(1)} - ${_mapMaxY.toStringAsFixed(1)})');
+    } catch (e) {
+      print('Error loading room data: $e');
+      setState(() {
+        _roomData = [];
+      });
+    }
   }
 
   @override
@@ -88,439 +124,355 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _handleSearch() async {
-    if (_searchController.text.isEmpty) {
-      _showSnackBar('Please enter a location to search', Colors.orange);
-      return;
-    }
-
-    if (_selectedFloor == null) {
-      _showSnackBar('Please select a floor', Colors.orange);
-      return;
-    }
-
-    setState(() {
-      _isSearching = true;
-    });
-
-    await Future.delayed(Duration(seconds: 2));
-
-    setState(() {
-      _isSearching = false;
-      _showMap = true;
-    });
-
-    if (mounted) {
-      _showSnackBar(
-        'Route to ${_searchController.text} on $_selectedFloor',
-        AppTheme.primaryColor,
-      );
-    }
-  }
-
-  void _onFloorChanged(String? value) {
-    setState(() {
-      _selectedFloor = value;
-      if (value != null) {
-        _showMap = true;
-      }
-    });
-  }
-
-  Widget _buildColoredMap() {
-    return Container(
-      width: double.infinity,
-      height: 400,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppTheme.dividerColor),
-      ),
-      child: Container(
-        padding: EdgeInsets.all(8),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: _buildSvgMap(),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSvgMap() {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: _buildInteractiveMap(),
-      ),
-    );
-  }
-
-  Widget _buildInteractiveMap() {
-    return InteractiveViewer(
-      boundaryMargin: EdgeInsets.all(20),
-      minScale: 0.5,
-      maxScale: 4.0,
-      child: Stack(
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
         children: [
-          // SVG background with WebView for proper color rendering
-          Positioned.fill(
-            child: _buildWebViewSvg(),
-          ),
-          // Interactive overlay for gestures and markers
-          Positioned.fill(
-            child: GestureDetector(
-              onTapDown: _handleMapTap,
-              child: Container(
-                color: Colors.transparent,
-                child: Stack(
-                  children: [
-                    // User location marker
-                    if (_userLocation != null)
-                      Positioned(
-                        left: _userLocation!.longitude - 10,
-                        top: _userLocation!.latitude - 10,
-                        child: Container(
-                          width: 20,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black26,
-                                blurRadius: 4,
-                                offset: Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            Icons.person,
-                            color: Colors.white,
-                            size: 12,
-                          ),
-                        ),
-                      ),
-                    // Path point markers
-                    ..._pathPoints.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final point = entry.value;
-                      return Positioned(
-                        left: point.longitude - 8,
-                        top: point.latitude - 8,
-                        child: Container(
-                          width: 16,
-                          height: 16,
-                          decoration: BoxDecoration(
-                            color: Colors.green,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black26,
-                                blurRadius: 4,
-                                offset: Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Text(
-                              '${index + 1}',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                    // Path lines between points
-                    if (_pathPoints.length >= 2)
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: PathPainter(_pathPoints),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          // Full-screen map
+          _buildFullPageMap(),
+
+          // Search overlay
+          _buildSearchOverlay(),
+
+          // Bottom navigation
+          _buildBottomNavigationBar(),
         ],
       ),
     );
   }
 
-  void _handleMapTap(TapDownDetails details) {
-    final RenderBox renderBox = context.findRenderObject() as RenderBox;
-    final localPosition = renderBox.globalToLocal(details.globalPosition);
-
-    // Convert tap position to map coordinates
-    final mapPoint = LatLng(
-      localPosition.dy, // Y coordinate
-      localPosition.dx, // X coordinate
+  Widget _buildFullPageMap() {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top +
+          120, // Start immediately under inputs
+      left: 0,
+      right: 0,
+      bottom: 80, // End just before bottom menu
+      child: Container(
+        color: Colors.white,
+        child: _buildFullSizeMap(),
+      ),
     );
-
-    setState(() {
-      _pathPoints.add(mapPoint);
-      if (_pathPoints.length >= 2) {
-        _routePath = List.from(_pathPoints);
-      }
-    });
   }
 
-  void _setUserLocation() {
-    // Set user location to a default position (you can modify this)
-    setState(() {
-      _userLocation = LatLng(300, 200); // Example position
-    });
-  }
+  Widget _buildFullSizeMap() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Use all available space with no margins to prevent truncation
+        final availableWidth = constraints.maxWidth;
+        final availableHeight = constraints.maxHeight;
 
-  void _clearPath() {
-    setState(() {
-      _pathPoints.clear();
-      _routePath.clear();
-    });
-  }
+        // Calculate actual map dimensions from JSON data bounds
+        final mapDataWidth = _mapMaxX - _mapMinX;
+        final mapDataHeight = _mapMaxY - _mapMinY;
+        final mapAspectRatio = mapDataWidth / mapDataHeight;
 
-  void _debugSvgContent() async {
-    try {
-      final svgContent = await DefaultAssetBundle.of(context)
-          .loadString(_floorAssets[_selectedFloor!]!);
-      print('SVG Content Length: ${svgContent.length}');
-      print(
-          'SVG First 500 chars: ${svgContent.substring(0, svgContent.length > 500 ? 500 : svgContent.length)}');
+        // Scale map to fit available space while maintaining aspect ratio
+        double mapWidth = availableWidth;
+        double mapHeight = availableWidth / mapAspectRatio;
 
-      // Check for color definitions
-      if (svgContent.contains('fill=')) {
-        print('SVG contains fill attributes');
-      }
-      if (svgContent.contains('style=')) {
-        print('SVG contains style attributes');
-      }
-      if (svgContent.contains('#')) {
-        print('SVG contains color codes');
-      }
-    } catch (e) {
-      print('Error loading SVG: $e');
-    }
-  }
-
-  Widget _buildWebViewSvg() {
-    return FutureBuilder<String>(
-      future: DefaultAssetBundle.of(context)
-          .loadString(_floorAssets[_selectedFloor!]!),
-      builder: (context, snapshot) {
-        if (snapshot.hasData) {
-          final htmlContent = '''
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <style>
-                  body {
-                      margin: 0;
-                      padding: 0;
-                      background-color: white;
-                      overflow: hidden;
-                      display: flex;
-                      justify-content: center;
-                      align-items: center;
-                      height: 100vh;
-                  }
-                  svg {
-                      max-width: 100%;
-                      max-height: 100%;
-                      width: auto;
-                      height: auto;
-                  }
-              </style>
-          </head>
-          <body>
-              ${snapshot.data!}
-          </body>
-          </html>
-          ''';
-
-          return WebViewWidget(
-            controller: WebViewController()
-              ..setJavaScriptMode(JavaScriptMode.unrestricted)
-              ..loadHtmlString(htmlContent),
-          );
-        } else if (snapshot.hasError) {
-          return Center(
-            child: Text(
-              'Error loading SVG: ${snapshot.error}',
-              style: TextStyle(color: Colors.red),
-            ),
-          );
-        } else {
-          return Center(
-            child: CircularProgressIndicator(color: AppTheme.primaryColor),
-          );
+        // If height exceeds available space, scale down based on height
+        if (mapHeight > availableHeight) {
+          mapHeight = availableHeight;
+          mapWidth = availableHeight * mapAspectRatio;
         }
+
+        return InteractiveViewer(
+          minScale: 0.1, // Allow micro minimization
+          maxScale: 10.0, // Allow more zoom
+          child: Center(
+            child: Container(
+              width: mapWidth,
+              height: mapHeight,
+              child: _buildMapContent(),
+            ),
+          ),
+        );
       },
     );
   }
 
-  void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        margin: EdgeInsets.all(16),
-      ),
+  Widget _buildMapContent() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Use the available space for the map content
+        return Container(
+          width: constraints.maxWidth,
+          height: constraints.maxHeight,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(
+              color: Colors.grey[300]!,
+              width: 1.0,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Stack(
+            children: [
+              // Building map with rooms
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: BuildingMapPainter(
+                    roomData: _roomData,
+                    mapBounds:
+                        Rect.fromLTRB(_mapMinX, _mapMinY, _mapMaxX, _mapMaxY),
+                  ),
+                  child: Container(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryLight.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Image.asset(
-                'assets/images/logo.png',
-                width: 28,
-                height: 28,
-              ),
-            ),
-            SizedBox(width: 10),
-            Text('FITMaps'),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.person_outline),
-            tooltip: 'Profile',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => ProfileScreen()),
-              );
-            },
-          ),
-        ],
-      ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppTheme.primaryColor, AppTheme.primaryDark],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+  Widget _buildSearchOverlay() {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 10,
+      left: 20,
+      right: 20,
+      child: Column(
+        children: [
+          // Search bar - minimized height
+          Container(
+            width: double.infinity,
+            height: 45, // Fixed height
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 5,
+                  offset: Offset(0, 2),
                 ),
+              ],
+            ),
+            child: TextFormField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search rooms, offices, facilities...',
+                border: InputBorder.none,
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                prefixIcon:
+                    Icon(Icons.search, color: AppTheme.primaryColor, size: 20),
+                suffixIcon: _isSearching
+                    ? IconButton(
+                        icon: Icon(Icons.clear,
+                            color: Colors.grey[600], size: 20),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _isSearching = false;
+                          });
+                        },
+                      )
+                    : null,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
+              onChanged: (value) {
+                setState(() {
+                  _isSearching = value.isNotEmpty;
+                });
+              },
+            ),
+          ),
+
+          SizedBox(height: 8),
+
+          // Floor selection - matching search design
+          Container(
+            width: double.infinity,
+            height: 45, // Match search bar height
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius:
+                  BorderRadius.circular(20), // Match search bar corners exactly
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 5,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
                 children: [
+                  // Floor selection on the left
+                  Icon(Icons.layers, color: AppTheme.primaryColor, size: 20),
+                  SizedBox(width: 12),
+                  Text(
+                    'Floor:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                      fontSize: 16,
+                    ),
+                  ),
+                  SizedBox(width: 12),
+                  DropdownButton<String>(
+                    value: _selectedFloor,
+                    items: [
+                      '-2ⁿᵈ Floor',
+                      '-1ˢᵗ Floor',
+                      '1ˢᵗ Floor',
+                      '2ⁿᵈ Floor',
+                      '3ʳᵈ Floor',
+                    ].map((String floor) {
+                      return DropdownMenuItem<String>(
+                        value: floor,
+                        child: Text(
+                          floor,
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (String? newValue) {
+                      setState(() {
+                        _selectedFloor = newValue;
+                      });
+                      _loadRoomData(); // Reload room data when floor changes
+                    },
+                    underline: Container(),
+                    icon: Icon(Icons.keyboard_arrow_down, size: 20),
+                    isExpanded: false,
+                  ),
+
+                  // Spacer to push Current Location to the right
+                  Spacer(),
+
+                  // Current Location on the right
+                  Icon(Icons.my_location,
+                      color: AppTheme.primaryColor, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Current Location',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                      fontSize: 16,
+                    ),
+                  ),
+                  SizedBox(width: 12),
                   Container(
-                    padding: EdgeInsets.all(12),
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: AppTheme.primaryColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Image.asset(
-                      'assets/images/logo.png',
-                      width: 50,
-                      height: 50,
-                    ),
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    'Student User',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    'student@fit.edu',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.9),
-                      fontSize: 13,
+                    child: Text(
+                      '${_roomData.length} rooms',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.primaryColor,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            ListTile(
-              leading: Icon(Icons.home_outlined, color: AppTheme.primaryColor),
-              title: Text('Home'),
-              onTap: () {
-                Navigator.pop(context);
-              },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomNavigationBar() {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 10,
+              offset: Offset(0, -5),
             ),
-            ListTile(
-              leading: Icon(Icons.person_outline, color: AppTheme.primaryColor),
-              title: Text('Profile'),
-              onTap: () {
-                Navigator.pop(context);
+          ],
+        ),
+        child: SafeArea(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildBottomNavItem(Icons.map, 'Map', true, () {}),
+              _buildBottomNavItem(Icons.search, 'Search', false, () {}),
+              _buildBottomNavItem(Icons.person, 'Profile', false, () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => ProfileScreen()),
                 );
-              },
+              }),
+              _buildBottomNavItem(Icons.menu, 'Menu', false, () {
+                _showBottomMenu();
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomNavItem(
+      IconData icon, String label, bool isSelected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? AppTheme.primaryColor : Colors.grey[600],
+              size: 24,
             ),
-            ListTile(
-              leading: Icon(Icons.history, color: AppTheme.primaryColor),
-              title: Text('Search History'),
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: Icon(
-                Icons.bookmark_outline,
-                color: AppTheme.primaryColor,
+            SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? AppTheme.primaryColor : Colors.grey[600],
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               ),
-              title: Text('Saved Locations'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBottomMenu() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.info_outline),
+              title: Text('About'),
               onTap: () {
                 Navigator.pop(context);
-              },
-            ),
-            Divider(),
-            ListTile(
-              leading: Icon(
-                Icons.settings_outlined,
-                color: AppTheme.primaryColor,
-              ),
-              title: Text('Settings'),
-              onTap: () {
-                Navigator.pop(context);
+                _showAboutDialog();
               },
             ),
             ListTile(
-              leading: Icon(Icons.help_outline, color: AppTheme.primaryColor),
+              leading: Icon(Icons.help_outline),
               title: Text('Help & Support'),
               onTap: () {
                 Navigator.pop(context);
+                _showHelpDialog();
               },
             ),
-            Divider(),
             ListTile(
               leading: Icon(Icons.logout, color: Colors.red),
               title: Text('Logout', style: TextStyle(color: Colors.red)),
@@ -532,402 +484,248 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.search,
-                                color: AppTheme.primaryColor,
-                                size: 22,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                'Search Location',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: 12),
-                          TextField(
-                            controller: _searchController,
-                            decoration: InputDecoration(
-                              labelText: 'Location',
-                              hintText: 'e.g., Room 101, Hall A',
-                              prefixIcon: Icon(Icons.room_outlined, size: 20),
-                              suffixIcon: _searchController.text.isNotEmpty
-                                  ? IconButton(
-                                      icon: Icon(Icons.clear, size: 20),
-                                      onPressed: () {
-                                        setState(() {
-                                          _searchController.clear();
-                                        });
-                                      },
-                                    )
-                                  : null,
-                            ),
-                            onChanged: (value) {
-                              setState(() {});
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 12),
-                  Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.layers,
-                                color: AppTheme.primaryColor,
-                                size: 22,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                'Select Floor',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            value: _selectedFloor,
-                            decoration: InputDecoration(
-                              prefixIcon: Icon(Icons.stairs_outlined, size: 20),
-                              hintText: 'Choose a floor',
-                            ),
-                            items: _floors.map((floor) {
-                              return DropdownMenuItem(
-                                value: floor,
-                                child: Text(floor),
-                              );
-                            }).toList(),
-                            onChanged: _onFloorChanged,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (_searchController.text.isNotEmpty &&
-                      _selectedFloor != null) ...[
-                    SizedBox(height: 12),
-                    Card(
-                      color: AppTheme.primaryLight.withOpacity(0.1),
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.check_circle_outline,
-                                  color: AppTheme.primaryColor,
-                                  size: 20,
-                                ),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Search Summary',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
-                                      ?.copyWith(color: AppTheme.primaryColor),
-                                ),
-                              ],
-                            ),
-                            Divider(height: 16),
-                            _buildSummaryRow(
-                              Icons.location_on,
-                              'Location',
-                              _searchController.text,
-                            ),
-                            SizedBox(height: 8),
-                            _buildSummaryRow(
-                              Icons.layers,
-                              'Floor',
-                              _selectedFloor!,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (!_showMap && _selectedFloor != null) ...[
-                    SizedBox(height: 12),
-                    Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.map_outlined,
-                              color: AppTheme.primaryColor,
-                              size: 24,
-                            ),
-                            SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '$_selectedFloor Map Available',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
-                                  ),
-                                  Text(
-                                    'Click to view the floor plan',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  _showMap = true;
-                                });
-                              },
-                              icon: Icon(Icons.visibility, size: 16),
-                              label: Text('Show Map'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  if (_showMap && _selectedFloor != null) ...[
-                    SizedBox(height: 12),
-                    Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.map_outlined,
-                                  color: AppTheme.primaryColor,
-                                  size: 22,
-                                ),
-                                SizedBox(width: 8),
-                                Text(
-                                  '$_selectedFloor Map',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                                Spacer(),
-                                IconButton(
-                                  icon: Icon(Icons.close, size: 20),
-                                  onPressed: () {
-                                    setState(() {
-                                      _showMap = false;
-                                    });
-                                  },
-                                  tooltip: 'Hide Map',
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 12),
-                            Container(
-                              height: 400,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: AppTheme.dividerColor,
-                                ),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Stack(
-                                  children: [
-                                    _buildColoredMap(),
-                                    // Control buttons
-                                    Positioned(
-                                      top: 10,
-                                      right: 10,
-                                      child: Column(
-                                        children: [
-                                          FloatingActionButton.small(
-                                            onPressed: _setUserLocation,
-                                            backgroundColor: Colors.blue,
-                                            child: Icon(Icons.person_pin,
-                                                color: Colors.white, size: 16),
-                                            tooltip: 'Set User Location',
-                                          ),
-                                          SizedBox(height: 8),
-                                          FloatingActionButton.small(
-                                            onPressed: _clearPath,
-                                            backgroundColor: Colors.red,
-                                            child: Icon(Icons.clear,
-                                                color: Colors.white, size: 16),
-                                            tooltip: 'Clear Path',
-                                          ),
-                                          SizedBox(height: 8),
-                                          FloatingActionButton.small(
-                                            onPressed: _debugSvgContent,
-                                            backgroundColor: Colors.orange,
-                                            child: Icon(Icons.bug_report,
-                                                color: Colors.white, size: 16),
-                                            tooltip: 'Debug SVG',
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  SizedBox(height: 12),
-                  Container(
-                    padding: EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryLight.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppTheme.dividerColor),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 18,
-                          color: AppTheme.textSecondary,
-                        ),
-                        SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _showMap
-                                ? 'Use the map above to navigate or search for specific locations'
-                                : 'Enter your destination and floor to start navigation',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Container(
-            padding: EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 8,
-                  offset: Offset(0, -2),
-                ),
-              ],
-            ),
-            child: SafeArea(
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: _isSearching ? null : _handleSearch,
-                  icon: _isSearching
-                      ? SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Icon(Icons.navigation, size: 20),
-                  label: Text(
-                    _isSearching ? 'Searching...' : 'Start Navigation',
-                  ),
-                ),
-              ),
-            ),
+    );
+  }
+
+  void _showAboutDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('About FITMaps'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('FIT Faculty Navigation App'),
+            SizedBox(height: 8),
+            Text('Version 1.0.0'),
+            SizedBox(height: 8),
+            Text(
+                'Navigate the FIT building with ease using interactive maps and search functionality.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryRow(IconData icon, String label, String value) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: AppTheme.textSecondary),
-        SizedBox(width: 8),
-        Text(
-          '$label: ',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: AppTheme.textSecondary,
-          ),
+  void _showHelpDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Help & Support'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('How to use FITMaps:'),
+            SizedBox(height: 8),
+            Text('• Use the search bar to find rooms, offices, or facilities'),
+            Text('• Select different floors using the dropdown'),
+            Text('• Tap on the map to explore different areas'),
+            Text('• Use the bottom navigation to access profile and menu'),
+          ],
         ),
-        Expanded(
-          child: Text(
-            value,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.textPrimary,
-            ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Got it'),
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  void _handleLogout() {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => SplashScreen()),
+      (route) => false,
     );
   }
 }
 
-// Custom painter for drawing paths between points
-class PathPainter extends CustomPainter {
-  final List<LatLng> points;
+class BuildingMapPainter extends CustomPainter {
+  final List<Map<String, dynamic>> roomData;
+  final Rect mapBounds;
 
-  PathPainter(this.points);
+  BuildingMapPainter({required this.roomData, required this.mapBounds});
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (points.length < 2) return;
+    // Remove clipping and building outline to prevent overlapping and truncation issues
+    // Just draw the rooms directly on the white background
 
-    final paint = Paint()
-      ..color = Colors.blue
-      ..strokeWidth = 4.0
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    final path = ui.Path();
-    path.moveTo(points[0].longitude, points[0].latitude);
-
-    for (int i = 1; i < points.length; i++) {
-      path.lineTo(points[i].longitude, points[i].latitude);
+    // Draw each room
+    for (final room in roomData) {
+      _drawRoom(canvas, room, size);
     }
+  }
 
-    canvas.drawPath(path, paint);
+  void _drawRoom(Canvas canvas, Map<String, dynamic> room, Size canvasSize) {
+    final coords = room['coords'] as List<dynamic>;
+    final roomId = room['id'] as String;
+    final title = room['title'] as String;
+
+    if (coords.isEmpty) return;
+
+    // Remove boundary checking to ensure all rooms are drawn
+    // Let the canvas handle the drawing area naturally
+
+    // Determine room color based on room type or ID
+    Color roomColor = _getRoomColor(roomId, title);
+
+    // Create room paint
+    final roomPaint = Paint()
+      ..color = roomColor
+      ..style = PaintingStyle.fill;
+
+    final borderPaint = Paint()
+      ..color = Colors.grey[600]!
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0; // Thinner borders to reduce overlapping
+
+    // Draw room polygon with proper coordinate mapping
+    final path = Path();
+    for (int i = 0; i < coords.length; i++) {
+      final coord = coords[i] as List<dynamic>;
+      if (coord.length >= 2) {
+        final x = (coord[0] as num).toDouble();
+        final y = (coord[1] as num).toDouble();
+
+        // Map coordinates to canvas space
+        final mappedX =
+            ((x - mapBounds.left) / mapBounds.width) * canvasSize.width;
+        final mappedY =
+            ((y - mapBounds.top) / mapBounds.height) * canvasSize.height;
+
+        if (i == 0) {
+          path.moveTo(mappedX, mappedY);
+        } else {
+          path.lineTo(mappedX, mappedY);
+        }
+      }
+    }
+    path.close();
+
+    canvas.drawPath(path, roomPaint);
+    canvas.drawPath(path, borderPaint);
+
+    // Draw room label with adaptive sizing
+    _drawRoomLabel(canvas, roomId, title, coords, canvasSize);
+  }
+
+  Color _getRoomColor(String roomId, String title) {
+    // Determine color based on room type
+    if (title.toLowerCase().contains('staircase')) return Colors.red[600]!;
+    if (title.toLowerCase().contains('office')) return Colors.green[500]!;
+    if (title.toLowerCase().contains('lab')) return Colors.orange[500]!;
+    if (title.toLowerCase().contains('lecture')) return Colors.blue[500]!;
+    if (title.toLowerCase().contains('library')) return Colors.purple[500]!;
+    if (title.toLowerCase().contains('corridor')) return Colors.grey[200]!;
+    if (title.toLowerCase().contains('elevator')) return Colors.brown[600]!;
+    if (title.toLowerCase().contains('toilet')) return Colors.cyan[500]!;
+    if (title.toLowerCase().contains('technology')) return Colors.indigo[500]!;
+    if (title.toLowerCase().contains('aircondition')) return Colors.teal[500]!;
+
+    // Default color based on room ID pattern
+    if (roomId.contains('D')) return Colors.green[500]!;
+    if (roomId.contains('C')) return Colors.blue[500]!;
+    if (roomId.contains('B')) return Colors.orange[500]!;
+    if (roomId.contains('A')) return Colors.purple[500]!;
+
+    return Colors.grey[400]!;
+  }
+
+  void _drawRoomLabel(Canvas canvas, String roomId, String title,
+      List<dynamic> coords, Size canvasSize) {
+    if (coords.isEmpty) return;
+
+    // Calculate center point of the room using mapped coordinates
+    double centerX = 0, centerY = 0;
+    for (final coord in coords) {
+      final coordList = coord as List<dynamic>;
+      if (coordList.length >= 2) {
+        final x = (coordList[0] as num).toDouble();
+        final y = (coordList[1] as num).toDouble();
+
+        // Map coordinates to canvas space
+        final mappedX =
+            ((x - mapBounds.left) / mapBounds.width) * canvasSize.width;
+        final mappedY =
+            ((y - mapBounds.top) / mapBounds.height) * canvasSize.height;
+
+        centerX += mappedX;
+        centerY += mappedY;
+      }
+    }
+    centerX /= coords.length;
+    centerY /= coords.length;
+
+    // Calculate adaptive font size based on canvas size and room area
+    double roomArea = _calculateRoomArea(coords);
+    double adaptiveFontSize = _calculateAdaptiveFontSize(roomArea, canvasSize);
+
+    // Draw room ID with adaptive font size
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: roomId,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: adaptiveFontSize,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+        canvas,
+        Offset(
+            centerX - textPainter.width / 2, centerY - textPainter.height / 2));
+  }
+
+  double _calculateRoomArea(List<dynamic> coords) {
+    if (coords.length < 3) return 0;
+
+    double area = 0;
+    for (int i = 0; i < coords.length; i++) {
+      final coord1 = coords[i] as List<dynamic>;
+      final coord2 = coords[(i + 1) % coords.length] as List<dynamic>;
+
+      if (coord1.length >= 2 && coord2.length >= 2) {
+        double x1 = (coord1[0] as num).toDouble();
+        double y1 = (coord1[1] as num).toDouble();
+        double x2 = (coord2[0] as num).toDouble();
+        double y2 = (coord2[1] as num).toDouble();
+
+        // Use original coordinates for area calculation (not mapped)
+        area += (x1 * y2 - x2 * y1);
+      }
+    }
+    return (area / 2).abs();
+  }
+
+  double _calculateAdaptiveFontSize(double roomArea, Size canvasSize) {
+    // Base font size
+    double baseFontSize = 8.0;
+
+    // Scale based on room area (larger rooms get larger fonts)
+    double areaScale = (roomArea / 10000).clamp(0.5, 3.0);
+
+    // Scale based on canvas size (larger canvas gets larger fonts)
+    double canvasScale = (canvasSize.width / 640).clamp(0.8, 2.0);
+
+    // Calculate final adaptive font size
+    double adaptiveSize = baseFontSize * areaScale * canvasScale;
+
+    // Ensure font size is within reasonable bounds
+    return adaptiveSize.clamp(6.0, 24.0);
   }
 
   @override

@@ -15,7 +15,6 @@ dependencies:
   flutter_svg: ^2.0.9
   flutter_map: ^6.1.0
   latlong2: ^0.9.1
-  webview_flutter: ^4.4.2
 
 dev_dependencies:
   flutter_test:
@@ -28,4 +27,6 @@ flutter:
   assets:
     - assets/images/
     - assets/floors/
+    - data/parsed_data/
+    - data/raw_htmls/
 
