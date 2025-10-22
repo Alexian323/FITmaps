@@ -1,3 +1,5 @@
+// LOGIN SCREEN COMMENTED OUT - NAVIGATING DIRECTLY TO HOME SCREEN
+/*
 import 'package:flutter/material.dart';
 import 'package:fitmaps/config/theme.dart';
 import 'package:fitmaps/screens/home_screen.dart';
@@ -149,3 +151,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+*/

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fitmaps/config/theme.dart';
-import 'package:fitmaps/screens/login_screen.dart';
+// import 'package:fitmaps/screens/login_screen.dart'; // Commented out - navigating directly to home
+import 'package:fitmaps/screens/home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -13,15 +14,18 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _navigateToLogin();
+    _navigateToHome(); // Changed from _navigateToLogin to _navigateToHome
   }
 
-  Future<void> _navigateToLogin() async {
+  Future<void> _navigateToHome() async {
+    // Changed method name and navigation target
     await Future.delayed(Duration(seconds: 3));
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => LoginScreen()),
+        MaterialPageRoute(
+            builder: (context) =>
+                HomeScreen()), // Navigate directly to HomeScreen
       );
     }
   }
