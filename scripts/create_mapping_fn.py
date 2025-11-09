@@ -147,6 +147,7 @@ def mapping_fn(json_data):
             lat, long = xy_to_gps(x, y, A_xy2gps)
             gps_coords.append([lat, long])
         instance_data["gps_coords"] = gps_coords
+        instance_data.pop("coords", None)
         new_dict = {instance_name: instance_data}
         # xy_current = [ref["x_y"] for ref in REFERENCE_DATA if ref["room"] == str(instance_name)][0]
         # if len(xy_current) == 2:
