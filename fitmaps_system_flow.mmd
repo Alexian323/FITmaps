@@ -1,0 +1,23 @@
+graph TB
+    %% Data Source
+    JSON[JSON Data]
+    
+    %% Core Architecture
+    JSON --> APP[Flutter App]
+    APP --> LOAD[Load & Parse]
+    LOAD --> STORE[Store Data]
+    STORE --> RENDER[Render Map]
+    
+    %% Key Features
+    RENDER --> SEARCH[Search System]
+    RENDER --> FLOORS[Floor Navigation]
+    RENDER --> INTERACT[Room Interaction]
+    
+    %% Styling
+    classDef data fill:#e3f2fd
+    classDef core fill:#f3e5f5
+    classDef feature fill:#e8f5e8
+    
+    class JSON data
+    class APP,LOAD,STORE,RENDER core
+    class SEARCH,FLOORS,INTERACT feature

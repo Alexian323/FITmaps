@@ -16,8 +16,12 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final _searchController = TextEditingController();
   final _interactiveController = TransformationController();
+  final _mapViewKey = GlobalKey();
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
+  late AnimationController _zoomAnimationController;
+  Animation<Matrix4>? _zoomAnimation;
+  VoidCallback? _zoomAnimationListener;
   String? _selectedFloor;
   bool _isSearching = false;
   List<Map<String, dynamic>> _roomData = [];
@@ -51,6 +55,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       parent: _pulseController,
       curve: Curves.easeInOut,
     ));
+
+    // Initialize zoom animation controller
+    _zoomAnimationController = AnimationController(
+      duration: Duration(milliseconds: 800),
+      vsync: this,
+    );
 
     _loadRoomData();
   }
@@ -391,55 +401,249 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _zoomToRooms(List<Map<String, dynamic>> rooms) {
     if (rooms.isEmpty) return;
 
-    // Calculate bounds of highlighted rooms
-    double minX = double.infinity;
-    double maxX = double.negativeInfinity;
-    double minY = double.infinity;
-    double maxY = double.negativeInfinity;
+    // Wait for next frame to ensure viewport size is available
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Get viewport size using MediaQuery
+      final mediaQuery = MediaQuery.of(this.context);
+      final screenWidth = mediaQuery.size.width;
+      final screenHeight = mediaQuery.size.height;
+      
+      // Account for top padding and bottom navigation
+      final topPadding = mediaQuery.padding.top + 120;
+      final bottomPadding = 80;
+      final viewportWidth = screenWidth;
+      final viewportHeight = screenHeight - topPadding - bottomPadding;
 
-    for (final room in rooms) {
-      final coords = room['coords'] as List<dynamic>;
+      // Calculate bounds of highlighted rooms
+      double minX = double.infinity;
+      double maxX = double.negativeInfinity;
+      double minY = double.infinity;
+      double maxY = double.negativeInfinity;
+
+      for (final room in rooms) {
+        final coords = room['coords'] as List<dynamic>;
+        for (final coord in coords) {
+          if (coord is List<dynamic> && coord.length >= 2) {
+            final x = (coord[0] as num).toDouble();
+            final y = (coord[1] as num).toDouble();
+
+            minX = math.min(minX, x);
+            maxX = math.max(maxX, x);
+            minY = math.min(minY, y);
+            maxY = math.max(maxY, y);
+          }
+        }
+      }
+
+      // Calculate center point of highlighted rooms (in map coordinates)
+      final centerX = (minX + maxX) / 2;
+      final centerY = (minY + maxY) / 2;
+
+      // Calculate room bounds with padding (more padding for better view)
+      final roomWidth = maxX - minX + 300; // Add more padding
+      final roomHeight = maxY - minY + 300; // Add more padding
+
+      // Get the current map bounds
+      final mapWidth = _mapMaxX - _mapMinX;
+      final mapHeight = _mapMaxY - _mapMinY;
+
+      // Calculate scale to fit the highlighted rooms (zoom in but not too close)
+      final scaleX = mapWidth / roomWidth;
+      final scaleY = mapHeight / roomHeight;
+      final targetScale = math.min(math.min(scaleX, scaleY), 1.5); // Cap at 1.5x zoom (not too close)
+
+      // Get the actual content size from the map (as rendered in SizedBox)
+      // This is calculated in _buildFullSizeMap and matches the aspect ratio
+      final mapAspectRatio = mapWidth / mapHeight;
+      double actualContentWidth = viewportWidth;
+      double actualContentHeight = viewportWidth / mapAspectRatio;
+      
+      if (actualContentHeight > viewportHeight) {
+        actualContentHeight = viewportHeight;
+        actualContentWidth = viewportHeight * mapAspectRatio;
+      }
+
+      // Convert room center from map coordinates to content pixel coordinates
+      // Map coordinates are in the range [_mapMinX, _mapMaxX] x [_mapMinY, _mapMaxY]
+      // Content coordinates are in the range [0, actualContentWidth] x [0, actualContentHeight]
+      final normalizedX = (centerX - _mapMinX) / mapWidth;
+      final normalizedY = (centerY - _mapMinY) / mapHeight;
+      
+      // Convert to content pixel coordinates (relative to content's top-left)
+      final contentPixelX = normalizedX * actualContentWidth;
+      final contentPixelY = normalizedY * actualContentHeight;
+
+      // In InteractiveViewer, transformations are relative to the child's center
+      // The content is centered in the viewport, so we need to work in content-centered coordinates
+      // Content center is at (actualContentWidth/2, actualContentHeight/2)
+      final contentCenterX = actualContentWidth / 2;
+      final contentCenterY = actualContentHeight / 2;
+
+      // Calculate position relative to content center (where origin is for InteractiveViewer)
+      final relativeX = contentPixelX - contentCenterX;
+      final relativeY = contentPixelY - contentCenterY;
+
+      // To center the room: after transformation, the room center should be at (0, 0)
+      // Transformation: scale * point + translation = 0
+      // So: translation = -scale * point
+      final translationX = -targetScale * relativeX;
+      final translationY = -targetScale * relativeY;
+
+      // Create transformation matrix: scale first, then translate
+      final targetMatrix = Matrix4.identity()
+        ..scale(targetScale)
+        ..translate(translationX / targetScale, translationY / targetScale);
+
+      // Get current matrix for smooth animation
+      final startMatrix = _interactiveController.value;
+
+      // Create smooth animation
+      _zoomAnimation = Matrix4Tween(
+        begin: startMatrix,
+        end: targetMatrix,
+      ).animate(CurvedAnimation(
+        parent: _zoomAnimationController,
+        curve: Curves.easeOutCubic,
+      ));
+
+      // Listen to animation and update controller
+      _zoomAnimationController.reset();
+      if (_zoomAnimationListener != null && _zoomAnimation != null) {
+        _zoomAnimation!.removeListener(_zoomAnimationListener!);
+      }
+      _zoomAnimationListener = () {
+        _interactiveController.value = _zoomAnimation!.value;
+      };
+      _zoomAnimation!.addListener(_zoomAnimationListener!);
+
+      // Start animation
+      _zoomAnimationController.forward();
+    });
+  }
+
+  void _zoomToRoom(Map<String, dynamic> room) {
+    final coords = room['coords'] as List<dynamic>;
+    if (coords.isEmpty) return;
+
+    // Wait for next frame to ensure viewport size is available
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Get viewport size using MediaQuery
+      final mediaQuery = MediaQuery.of(this.context);
+      final screenWidth = mediaQuery.size.width;
+      final screenHeight = mediaQuery.size.height;
+      
+      // Account for top padding and bottom navigation
+      final topPadding = mediaQuery.padding.top + 120;
+      final bottomPadding = 80;
+      final viewportWidth = screenWidth;
+      final viewportHeight = screenHeight - topPadding - bottomPadding;
+
+      // Calculate room center
+      double centerX = 0, centerY = 0;
+      for (final coord in coords) {
+        if (coord is List<dynamic> && coord.length >= 2) {
+          centerX += (coord[0] as num).toDouble();
+          centerY += (coord[1] as num).toDouble();
+        }
+      }
+      centerX /= coords.length;
+      centerY /= coords.length;
+
+      // Get the current map bounds
+      final mapWidth = _mapMaxX - _mapMinX;
+      final mapHeight = _mapMaxY - _mapMinY;
+
+      // Calculate room bounds with padding for better view
+      double minX = double.infinity;
+      double maxX = double.negativeInfinity;
+      double minY = double.infinity;
+      double maxY = double.negativeInfinity;
+
       for (final coord in coords) {
         if (coord is List<dynamic> && coord.length >= 2) {
           final x = (coord[0] as num).toDouble();
           final y = (coord[1] as num).toDouble();
-
           minX = math.min(minX, x);
           maxX = math.max(maxX, x);
           minY = math.min(minY, y);
           maxY = math.max(maxY, y);
         }
       }
-    }
 
-    // Calculate center point of highlighted rooms
-    final centerX = (minX + maxX) / 2;
-    final centerY = (minY + maxY) / 2;
+      final roomWidth = maxX - minX + 400; // Generous padding
+      final roomHeight = maxY - minY + 400; // Generous padding
 
-    // Calculate room bounds with padding
-    final roomWidth = maxX - minX + 200; // Add padding
-    final roomHeight = maxY - minY + 200; // Add padding
+      // Calculate scale (zoom in but not too close)
+      final scaleX = mapWidth / roomWidth;
+      final scaleY = mapHeight / roomHeight;
+      final targetScale = math.min(math.min(scaleX, scaleY), 1.5); // Cap at 1.5x zoom
 
-    // Get the current map bounds
-    final mapWidth = _mapMaxX - _mapMinX;
-    final mapHeight = _mapMaxY - _mapMinY;
+      // Get the actual content size from the map (as rendered in SizedBox)
+      // This is calculated in _buildFullSizeMap and matches the aspect ratio
+      final mapAspectRatio = mapWidth / mapHeight;
+      double actualContentWidth = viewportWidth;
+      double actualContentHeight = viewportWidth / mapAspectRatio;
+      
+      if (actualContentHeight > viewportHeight) {
+        actualContentHeight = viewportHeight;
+        actualContentWidth = viewportHeight * mapAspectRatio;
+      }
 
-    // Calculate scale to fit the highlighted rooms
-    final scaleX = mapWidth / roomWidth;
-    final scaleY = mapHeight / roomHeight;
-    final scale = math.min(math.min(scaleX, scaleY), 2.0); // Cap at 2x zoom
+      // Convert room center from map coordinates to content pixel coordinates
+      // Map coordinates are in the range [_mapMinX, _mapMaxX] x [_mapMinY, _mapMaxY]
+      // Content coordinates are in the range [0, actualContentWidth] x [0, actualContentHeight]
+      final normalizedX = (centerX - _mapMinX) / mapWidth;
+      final normalizedY = (centerY - _mapMinY) / mapHeight;
+      
+      // Convert to content pixel coordinates (relative to content's top-left)
+      final contentPixelX = normalizedX * actualContentWidth;
+      final contentPixelY = normalizedY * actualContentHeight;
 
-    // Calculate the offset to center the rooms
-    final offsetX = (centerX - _mapMinX) / mapWidth;
-    final offsetY = (centerY - _mapMinY) / mapHeight;
+      // In InteractiveViewer, transformations are relative to the child's center
+      // The content is centered in the viewport, so we need to work in content-centered coordinates
+      // Content center is at (actualContentWidth/2, actualContentHeight/2)
+      final contentCenterX = actualContentWidth / 2;
+      final contentCenterY = actualContentHeight / 2;
 
-    // Apply transformation to the InteractiveViewer
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final matrix = Matrix4.identity()
-        ..translate(-offsetX * mapWidth, -offsetY * mapHeight)
-        ..scale(scale);
+      // Calculate position relative to content center (where origin is for InteractiveViewer)
+      final relativeX = contentPixelX - contentCenterX;
+      final relativeY = contentPixelY - contentCenterY;
 
-      _interactiveController.value = matrix;
+      // To center the room: after transformation, the room center should be at (0, 0)
+      // Transformation: scale * point + translation = 0
+      // So: translation = -scale * point
+      final translationX = -targetScale * relativeX;
+      final translationY = -targetScale * relativeY;
+
+      // Create transformation matrix: scale first, then translate
+      final targetMatrix = Matrix4.identity()
+        ..scale(targetScale)
+        ..translate(translationX / targetScale, translationY / targetScale);
+
+      // Get current matrix for smooth animation
+      final startMatrix = _interactiveController.value;
+
+      // Create smooth animation
+      _zoomAnimation = Matrix4Tween(
+        begin: startMatrix,
+        end: targetMatrix,
+      ).animate(CurvedAnimation(
+        parent: _zoomAnimationController,
+        curve: Curves.easeOutCubic,
+      ));
+
+      // Listen to animation and update controller
+      _zoomAnimationController.reset();
+      if (_zoomAnimationListener != null && _zoomAnimation != null) {
+        _zoomAnimation!.removeListener(_zoomAnimationListener!);
+      }
+      _zoomAnimationListener = () {
+        _interactiveController.value = _zoomAnimation!.value;
+      };
+      _zoomAnimation!.addListener(_zoomAnimationListener!);
+
+      // Start animation
+      _zoomAnimationController.forward();
     });
   }
 
@@ -483,7 +687,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       centerY /= coords.length;
 
       // Calculate marker size (same logic as in painter)
-      final baseMarkerSize = 20.0;
+      const baseMarkerSize = 20.0;
       final zoomAdjustedSize = baseMarkerSize /
           _interactiveController.value.getMaxScaleOnAxis().clamp(0.5, 3.0);
       final markerSize = zoomAdjustedSize * _pulseAnimation.value;
@@ -493,7 +697,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
       // Check if tap is within marker bounds - use much larger clickable area
       final distance = (tapPosition - Offset(centerX, centerY)).distance;
-      final clickableRadius =
+      const clickableRadius =
           80.0; // Very large clickable area for easy clicking
       print(
           'Distance to ${room['id']}: $distance (threshold: $clickableRadius)');
@@ -516,6 +720,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _roomPhotos = [];
       _isLoadingPhotos = true;
     });
+
+    // Smoothly zoom to the selected room
+    _zoomToRoom(room);
 
     // Load room photos
     _loadRoomPhotos(room);
@@ -606,6 +813,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _searchController.dispose();
     _interactiveController.dispose();
     _pulseController.dispose();
+    if (_zoomAnimationListener != null && _zoomAnimation != null) {
+      _zoomAnimation!.removeListener(_zoomAnimationListener!);
+    }
+    _zoomAnimationController.dispose();
     super.dispose();
   }
 
@@ -667,6 +878,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         }
 
         return InteractiveViewer(
+          key: _mapViewKey,
           transformationController: _interactiveController,
           minScale: 0.1, // Allow micro minimization
           maxScale: 10.0, // Allow more zoom
@@ -675,7 +887,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             // This can be enabled if you want highlighting to clear on manual interaction
           },
           child: Center(
-            child: Container(
+            child: SizedBox(
               width: mapWidth,
               height: mapHeight,
               child: _buildMapContent(),
@@ -760,7 +972,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: Column(
               children: [
                 // Search input field
-                Container(
+                SizedBox(
                   height: 45,
                   child: TextFormField(
                     controller: _searchController,
@@ -894,16 +1106,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   // Spacer to push Current Location to the right
                   Spacer(),
 
-                  // Current Location on the right
-                  Icon(Icons.my_location,
-                      color: AppTheme.primaryColor, size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    'Current Location',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey[700],
-                      fontSize: 16,
+                  // Current Location - Compact icon with tooltip
+                  Tooltip(
+                    message: 'Current Location',
+                    child: Container(
+                      padding: EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.my_location,
+                        color: AppTheme.primaryColor,
+                        size: 18,
+                      ),
                     ),
                   ),
                   SizedBox(width: 12),
@@ -1573,13 +1789,25 @@ class BuildingMapPainter extends CustomPainter {
     // Remove clipping and building outline to prevent overlapping and truncation issues
     // Just draw the rooms directly on the white background
 
-    // Draw each room
+    // First pass: Draw all rooms (polygons, borders, labels) WITHOUT markers
     for (final room in roomData) {
-      _drawRoom(canvas, room, size);
+      _drawRoom(canvas, room, size, drawMarker: false);
+    }
+
+    // Second pass: Draw all markers on top (ensures markers are always visible)
+    for (final room in roomData) {
+      final roomId = room['id'] as String;
+      final isHighlighted = highlightedRooms
+          .any((highlightedRoom) => highlightedRoom['id'] == roomId);
+      
+      if (isHighlighted) {
+        final coords = room['coords'] as List<dynamic>;
+        _drawGoogleMarker(canvas, coords, size);
+      }
     }
   }
 
-  void _drawRoom(Canvas canvas, Map<String, dynamic> room, Size canvasSize) {
+  void _drawRoom(Canvas canvas, Map<String, dynamic> room, Size canvasSize, {bool drawMarker = true}) {
     final coords = room['coords'] as List<dynamic>;
     final roomId = room['id'] as String;
     final title = room['title'] as String;
@@ -1642,8 +1870,8 @@ class BuildingMapPainter extends CustomPainter {
     // Draw room label with adaptive sizing
     _drawRoomLabel(canvas, roomId, title, coords, canvasSize);
 
-    // Draw Google-style marker for highlighted rooms
-    if (isHighlighted) {
+    // Draw Google-style marker for highlighted rooms (only if drawMarker is true)
+    if (drawMarker && isHighlighted) {
       _drawGoogleMarker(canvas, coords, canvasSize);
     }
   }
@@ -1696,8 +1924,13 @@ class BuildingMapPainter extends CustomPainter {
       List<dynamic> coords, Size canvasSize) {
     if (coords.isEmpty) return;
 
-    // Calculate center point of the room using mapped coordinates
+    // Calculate center point and bounding box of the room in canvas pixels
     double centerX = 0, centerY = 0;
+    double minMappedX = double.infinity;
+    double maxMappedX = double.negativeInfinity;
+    double minMappedY = double.infinity;
+    double maxMappedY = double.negativeInfinity;
+    
     for (final coord in coords) {
       final coordList = coord as List<dynamic>;
       if (coordList.length >= 2) {
@@ -1712,14 +1945,30 @@ class BuildingMapPainter extends CustomPainter {
 
         centerX += mappedX;
         centerY += mappedY;
+        
+        // Track bounding box in canvas pixels
+        minMappedX = math.min(minMappedX, mappedX);
+        maxMappedX = math.max(maxMappedX, mappedX);
+        minMappedY = math.min(minMappedY, mappedY);
+        maxMappedY = math.max(maxMappedY, mappedY);
       }
     }
     centerX /= coords.length;
     centerY /= coords.length;
 
-    // Calculate adaptive font size based on canvas size and room area
-    double roomArea = _calculateRoomArea(coords);
-    double adaptiveFontSize = _calculateAdaptiveFontSize(roomArea, canvasSize);
+    // Calculate room's actual visual dimensions in canvas pixels
+    final roomWidthInPixels = maxMappedX - minMappedX;
+    final roomHeightInPixels = maxMappedY - minMappedY;
+    final roomSizeInPixels = math.sqrt(roomWidthInPixels * roomHeightInPixels);
+    
+    // Calculate font size that maintains constant ratio to room size
+    // Font scales with zoom because canvas scales with zoom (InteractiveViewer scales everything)
+    // So we base font size directly on room's pixel dimensions to maintain ratio
+    const fontToRoomRatio = 0.15; // Font size as ratio of room's linear dimension
+    double adaptiveFontSize = roomSizeInPixels * fontToRoomRatio;
+    
+    // Ensure readable bounds
+    adaptiveFontSize = adaptiveFontSize.clamp(8.0, 36.0);
 
     // Draw room ID with adaptive font size
     final textPainter = TextPainter(
@@ -1761,25 +2010,6 @@ class BuildingMapPainter extends CustomPainter {
     return (area / 2).abs();
   }
 
-  double _calculateAdaptiveFontSize(double roomArea, Size canvasSize) {
-    // Base font size
-    double baseFontSize = 8.0;
-
-    // Scale based on room area (larger rooms get larger fonts)
-    double areaScale = (roomArea / 10000).clamp(0.5, 3.0);
-
-    // Scale based on canvas size (larger canvas gets larger fonts)
-    double canvasScale = (canvasSize.width / 640).clamp(0.8, 2.0);
-
-    // Scale based on zoom level (more zoom = larger fonts for better readability)
-    double zoomScale = zoomLevel.clamp(0.8, 2.5);
-
-    // Calculate final adaptive font size
-    double adaptiveSize = baseFontSize * areaScale * canvasScale * zoomScale;
-
-    // Ensure font size is within reasonable bounds
-    return adaptiveSize.clamp(6.0, 32.0);
-  }
 
   void _drawGoogleMarker(Canvas canvas, List<dynamic> coords, Size canvasSize) {
     if (coords.isEmpty) return;
@@ -1806,55 +2036,113 @@ class BuildingMapPainter extends CustomPainter {
     centerY /= coords.length;
 
     // Marker size based on pulse animation and zoom level
-    // When zoomed in (zoomLevel > 1.0), make markers smaller
-    // When zoomed out (zoomLevel < 1.0), make markers larger
-    final baseMarkerSize = 20.0;
+    const baseMarkerSize = 40.0; // Google Maps standard size
     final zoomAdjustedSize = baseMarkerSize / zoomLevel.clamp(0.5, 3.0);
     final markerSize = zoomAdjustedSize * pulseValue;
+    
+    // Pin tip is at the actual location point (exact Google Maps behavior)
+    final pinTipX = centerX;
+    final pinTipY = centerY;
+    
+    // Google Maps pin dimensions - circular head is ~2/3, triangle is ~1/3
+    final pinRadius = markerSize * 0.25; // Radius of the circular head
+    final pinHeight = markerSize * 0.65; // Total height from tip to top of circle
+    final pinHeadCenterY = pinTipY - pinHeight + pinRadius; // Center of circular head
+    final triangleWidth = pinRadius * 0.5; // Width of triangle base
 
-    // Draw marker shadow (slightly offset)
+    // Draw shadow (Google Maps style - offset down and right)
     final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.3)
+      ..color = Colors.black.withValues(alpha: 0.25 * pulseValue)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, markerSize * 0.15)
       ..style = PaintingStyle.fill;
 
-    canvas.drawCircle(
-      Offset(centerX + 2, centerY + 2),
-      markerSize * 0.6,
-      shadowPaint,
-    );
+    // Create teardrop shadow path (offset slightly)
+    final shadowPath = Path();
+    // Shadow circular head
+    shadowPath.addOval(Rect.fromCircle(
+      center: Offset(pinTipX + 1, pinHeadCenterY + 1),
+      radius: pinRadius,
+    ));
+    // Shadow triangle
+    shadowPath.moveTo(pinTipX + 1, pinHeadCenterY + 1 + pinRadius);
+    shadowPath.lineTo(pinTipX + 1 + triangleWidth, pinTipY + 1);
+    shadowPath.lineTo(pinTipX + 1 - triangleWidth, pinTipY + 1);
+    shadowPath.close();
+    canvas.drawPath(shadowPath, shadowPaint);
 
-    // Draw marker pin (red circle)
+    // Draw pin body - Red color (Google Maps red marker style)
     final pinPaint = Paint()
-      ..color = Colors.red[600]!.withValues(alpha: pulseValue)
+      ..color = Color(0xFFEA4335).withValues(alpha: pulseValue) // Google Maps red
       ..style = PaintingStyle.fill;
 
-    canvas.drawCircle(
-      Offset(centerX, centerY),
-      markerSize * 0.6,
-      pinPaint,
-    );
+    // Create exact Google Maps teardrop/pin path
+    final pinPath = Path();
+    
+    // Circular head (top part) - forms the main body
+    pinPath.addOval(Rect.fromCircle(
+      center: Offset(pinTipX, pinHeadCenterY),
+      radius: pinRadius,
+    ));
+    
+    // Triangular point (bottom) - connects circle to tip
+    // The triangle is narrower than the circle for that classic Google pin look
+    pinPath.moveTo(pinTipX, pinHeadCenterY + pinRadius);
+    pinPath.lineTo(pinTipX + triangleWidth, pinTipY);
+    pinPath.lineTo(pinTipX - triangleWidth, pinTipY);
+    pinPath.close();
+    
+    canvas.drawPath(pinPath, pinPaint);
 
-    // Draw marker border
+    // Draw white border (Google Maps style - subtle but visible)
     final borderPaint = Paint()
       ..color = Colors.white.withValues(alpha: pulseValue)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 1.5;
 
+    // Border for circular head
     canvas.drawCircle(
-      Offset(centerX, centerY),
-      markerSize * 0.6,
+      Offset(pinTipX, pinHeadCenterY),
+      pinRadius,
       borderPaint,
     );
 
-    // Draw inner white dot
+    // Border for triangular point
+    final borderPath = Path();
+    borderPath.moveTo(pinTipX, pinHeadCenterY + pinRadius);
+    borderPath.lineTo(pinTipX + triangleWidth, pinTipY);
+    borderPath.lineTo(pinTipX - triangleWidth, pinTipY);
+    borderPath.close();
+    canvas.drawPath(borderPath, borderPaint);
+
+    // Draw white center dot in circular head (Google Maps signature feature)
     final dotPaint = Paint()
       ..color = Colors.white.withValues(alpha: pulseValue)
       ..style = PaintingStyle.fill;
 
     canvas.drawCircle(
-      Offset(centerX, centerY),
-      markerSize * 0.2,
+      Offset(pinTipX, pinHeadCenterY),
+      pinRadius * 0.4, // Proportionally sized white dot
       dotPaint,
+    );
+
+    // Draw subtle highlight/shine on top-left of circular head (Google Maps style)
+    final highlightPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.white.withValues(alpha: 0.4 * pulseValue),
+          Colors.white.withValues(alpha: 0.0),
+        ],
+        stops: [0.0, 1.0],
+      ).createShader(Rect.fromCircle(
+        center: Offset(pinTipX - pinRadius * 0.4, pinHeadCenterY - pinRadius * 0.4),
+        radius: pinRadius * 0.8,
+      ))
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(
+      Offset(pinTipX - pinRadius * 0.4, pinHeadCenterY - pinRadius * 0.4),
+      pinRadius * 0.6,
+      highlightPaint,
     );
   }
 
