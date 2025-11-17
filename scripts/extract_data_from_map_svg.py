@@ -5,7 +5,15 @@ import argparse
 
 parser = argparse.ArgumentParser(description="Extract room data from map SVG HTML file")
 parser.add_argument("-i", "--input", default="data/raw_htmls", help="Path to the input HTML folder")
-parser.add_argument("-o", "--save_path", default="data/parsed_data/maps_data.json", help="Path to the output JSON file")
+parser.add_argument("-o", "--save_path", default="data/parsed_data/maps_data_full.json", help="Path to the output JSON file")
+
+extra_paths = [
+    [400, 590, 200, 16], ##x y w h
+    [486, 556, 20, 32],
+    [486, 308, 42, 192],
+    [528, 390, 56, 28],
+    [450, 308, 36, 28]
+]
 
 def read_html_data(file_path):
     soups = {}
@@ -59,6 +67,18 @@ def extract_rooms(soups):
             # print(link)
             # print(title)
         # print(rooms)
+    for extra in extra_paths:
+        x, y, w, h = extra
+        coords = [(x, y), (x+w, y), (x+w, y+h), (x, y+h)]
+        rooms.append({
+            f"extra_{x}_{y}": {
+                "title": "extra_area",
+                "onclick": "",
+                "floor_no": "extra",
+                "room_tag": "",
+                "coords": coords
+            }
+        })
     save_json(rooms, args.save_path)
     
 
