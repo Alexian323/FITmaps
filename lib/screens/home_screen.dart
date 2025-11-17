@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:fitmaps/config/theme.dart';
 import 'package:fitmaps/screens/profile_screen.dart';
 import 'package:fitmaps/screens/splash_screen.dart';
+import 'package:fitmaps/utils/map_path.dart';
 import 'dart:convert';
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
+import 'package:html/parser.dart' as html_parser;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -37,6 +40,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _isDrawerExpanded = false;
   List<String> _roomPhotos = [];
   bool _isLoadingPhotos = false;
+
+  // Path drawing state
+  List<MapPath> _navigationPaths = [];
+  UserTrail _userTrail = UserTrail();
+  
+  // Current location (for testing - A101 is the default source)
+  Map<String, dynamic>? _currentLocationRoom;
 
   @override
   void initState() {
@@ -72,9 +82,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Future<void> _loadRoomData() async {
     try {
-      // Load room data from JSON file
-      final jsonString = await DefaultAssetBundle.of(context)
-          .loadString('data/parsed_data/maps_data.json');
+      // Load room data from merged JSON file (contains both coords and gps_coords)
+      // Falls back to original file if merged file doesn't exist for backward compatibility
+      String jsonString;
+      try {
+        jsonString = await DefaultAssetBundle.of(context)
+            .loadString('data/parsed_data/maps_data_merged.json');
+      } catch (e) {
+        // Fallback to original file if merged doesn't exist
+        print('Merged file not found, using original maps_data.json');
+        jsonString = await DefaultAssetBundle.of(context)
+            .loadString('data/parsed_data/maps_data.json');
+      }
+      
       final List<dynamic> allRooms = json.decode(jsonString);
 
       // Load all rooms from all floors
@@ -87,7 +107,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             allRoomsList.add({
               'id': roomId,
               'title': roomData['title'] ?? '',
-              'coords': roomData['coords'] ?? [],
+              'coords': roomData['coords'] ?? [], // Pixel coordinates for rendering
+              'gps_coords': roomData['gps_coords'], // GPS coordinates (optional, for location tracking)
               'room_tag': roomData['room_tag'] ?? '',
               'onclick': roomData['onclick'] ?? '',
               'floor_no': roomData['floor_no'] ?? '',
@@ -102,6 +123,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       });
 
       print('Loaded ${_allRoomsData.length} total rooms from all floors');
+
+      // Set A101 as the default current location (for testing)
+      // Do this after rooms are loaded
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _setCurrentLocation('A101');
+      });
 
       // Load current floor data
       _loadCurrentFloorData();
@@ -143,6 +170,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final floorRooms = _allRoomsData
         .where((room) => room['floor_no']?.toString() == currentFloor)
         .toList();
+    
+    // Ensure current location room is always highlighted if on current floor
+    if (_currentLocationRoom != null) {
+      final currentLocationFloor = _currentLocationRoom!['floor_no']?.toString();
+      if (currentLocationFloor == currentFloor) {
+        // Current location is on this floor - ensure it's visible
+        if (!_highlightedRooms.any((r) => r['id'] == _currentLocationRoom!['id'])) {
+          _highlightedRooms.add(_currentLocationRoom!);
+        }
+      }
+    }
 
     // Calculate bounds for current floor
     double minX = double.infinity;
@@ -204,7 +242,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
           if (currentFloorRooms.isNotEmpty) {
             // Room found on current floor - highlight matching rooms
+            // Also include current location room if it exists and is on this floor
             _highlightedRooms = List.from(currentFloorRooms);
+            if (_currentLocationRoom != null) {
+              final currentFloorId = _currentLocationRoom!['floor_no']?.toString();
+              if (currentFloorId == _getCurrentFloorId()) {
+                // Add current location if not already in highlighted rooms
+                if (!_highlightedRooms.any((r) => r['id'] == _currentLocationRoom!['id'])) {
+                  _highlightedRooms.add(_currentLocationRoom!);
+                }
+              }
+            }
             _zoomToRooms(_highlightedRooms);
             _pulseController.repeat(reverse: true);
           } else {
@@ -274,6 +322,149 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
+  /// Set navigation path between two rooms
+  /// 
+  /// Example usage:
+  /// ```dart
+  /// final startRoom = getRoomById('D006');
+  /// final endRoom = getRoomById('D0201');
+  /// if (startRoom != null && endRoom != null) {
+  ///   setNavigationPath(startRoom, endRoom);
+  /// }
+  /// ```
+  void setNavigationPath(Map<String, dynamic> startRoom, Map<String, dynamic> endRoom) {
+    // Use corridor-aware routing for better paths
+    final pathPoints = PathUtils.generatePathThroughCorridors(
+      startRoom,
+      endRoom,
+      _allRoomsData,
+    );
+    setState(() {
+      _navigationPaths = [
+        MapPath.navigation(points: pathPoints),
+      ];
+    });
+  }
+
+  /// Set navigation path with waypoints
+  void setNavigationPathWithWaypoints(
+    Map<String, dynamic> startRoom,
+    List<Map<String, dynamic>> waypoints,
+    Map<String, dynamic> endRoom,
+  ) {
+    final pathPoints = PathUtils.generatePathThroughWaypoints(startRoom, waypoints, endRoom);
+    setState(() {
+      _navigationPaths = [
+        MapPath.navigation(points: pathPoints),
+      ];
+    });
+  }
+
+  /// Clear all navigation paths
+  void clearNavigationPaths() {
+    setState(() {
+      _navigationPaths = [];
+    });
+  }
+
+  /// Update user trail with a new position (for GPS tracking)
+  void updateUserTrail(Offset position) {
+    _userTrail.addPosition(position);
+    setState(() {}); // Trigger repaint
+  }
+
+  /// Clear user trail
+  void clearUserTrail() {
+    _userTrail.clear();
+    setState(() {});
+  }
+
+  /// Get room by ID from all rooms data
+  Map<String, dynamic>? getRoomById(String roomId) {
+    try {
+      return _allRoomsData.firstWhere((room) => room['id'] == roomId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Set the current location room (for testing)
+  void _setCurrentLocation(String roomId) {
+    final room = getRoomById(roomId);
+    if (room != null) {
+      setState(() {
+        _currentLocationRoom = room;
+      });
+      print('Current location set to: $roomId');
+      
+      // Switch to the floor where the current location is
+      final floorNo = room['floor_no']?.toString();
+      if (floorNo != null) {
+        _switchToFloor(floorNo);
+      }
+    } else {
+      print('Room $roomId not found for current location');
+    }
+  }
+
+  /// Navigate to a destination room from current location
+  void _navigateToRoom(Map<String, dynamic> destinationRoom) {
+    if (_currentLocationRoom == null) {
+      // If no current location, set A101 as default
+      _setCurrentLocation('A101');
+    }
+    
+    if (_currentLocationRoom != null) {
+      final startRoom = _currentLocationRoom!;
+      final endRoom = destinationRoom;
+      
+      // Check if rooms are on the same floor
+      final startFloor = startRoom['floor_no']?.toString();
+      final endFloor = endRoom['floor_no']?.toString();
+      
+      if (startFloor == endFloor) {
+        // Same floor - use corridor-aware routing
+        final pathPoints = PathUtils.generatePathThroughCorridors(
+          startRoom,
+          endRoom,
+          _allRoomsData,
+        );
+        setState(() {
+          _navigationPaths = [
+            MapPath.navigation(points: pathPoints),
+          ];
+        });
+        print('Navigation path created from ${startRoom['id']} to ${endRoom['id']} through corridors');
+      } else {
+        // Different floors - switch to destination floor and draw path
+        _switchToFloor(endFloor);
+        // Wait for floor switch to complete, then draw path
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final pathPoints = PathUtils.generatePathThroughCorridors(
+            startRoom,
+            endRoom,
+            _allRoomsData,
+          );
+          setState(() {
+            _navigationPaths = [
+              MapPath.navigation(points: pathPoints),
+            ];
+          });
+          print('Navigation path created from ${startRoom['id']} to ${endRoom['id']} (cross-floor)');
+        });
+      }
+      
+      // Zoom to show both rooms and path
+      _zoomToRooms([startRoom, endRoom]);
+    }
+  }
+
+  /// Clear navigation path
+  void _clearNavigation() {
+    clearNavigationPaths();
+    print('Navigation path cleared');
+  }
+
   void _updateSuggestions(String query) {
     if (query.isEmpty) {
       setState(() {
@@ -335,6 +526,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           _isSearching = true;
         });
         _performSearch(roomId);
+        
+        // Automatically draw navigation path when clicking on search suggestion
+        _navigateToRoom(room);
       },
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -744,28 +938,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         return;
       }
 
-      // Try to fetch photos from the FIT website
-      // For now, we'll simulate checking for photos
-      await Future.delayed(Duration(seconds: 2));
+      // Extract photo URLs from the FIT website
+      final photoUrls = await _extractRoomPhotos(roomUrl);
 
-      // Check if photos exist for this room
-      // In a real implementation, you would parse the HTML from roomUrl
-      // and look for image tags or photo links
-      final hasPhotos = await _checkForRoomPhotos(roomUrl);
+      setState(() {
+        _roomPhotos = photoUrls;
+        _isLoadingPhotos = false;
+      });
 
-      if (hasPhotos) {
-        // In a real implementation, you would extract actual photo URLs
-        // For now, we'll use empty list to show no photos placeholder
-        setState(() {
-          _roomPhotos = [];
-          _isLoadingPhotos = false;
-        });
-        print('No photos found for room $roomId');
+      if (photoUrls.isNotEmpty) {
+        print('Found ${photoUrls.length} photo(s) for room $roomId');
       } else {
-        setState(() {
-          _roomPhotos = [];
-          _isLoadingPhotos = false;
-        });
         print('No photos found for room $roomId');
       }
     } catch (e) {
@@ -777,20 +960,255 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  Future<bool> _checkForRoomPhotos(String roomUrl) async {
+  /// Extract room photo URLs from the FIT website HTML
+  /// Photos are found after <h3>Photo</h3> tag
+  /// Extracts all <img> tags that appear after the Photo heading
+  Future<List<String>> _extractRoomPhotos(String roomUrl) async {
     try {
-      // In a real implementation, you would:
-      // 1. Make HTTP request to roomUrl
-      // 2. Parse the HTML response
-      // 3. Look for image tags or photo links
-      // 4. Return true if photos are found
+      print('Fetching room page: $roomUrl');
+      
+      // Make HTTP request with headers and timeout
+      final client = http.Client();
+      final request = http.Request('GET', Uri.parse(roomUrl));
+      request.headers.addAll({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+      });
+      
+      final response = await client
+          .send(request)
+          .timeout(Duration(seconds: 15))
+          .then((streamedResponse) => http.Response.fromStream(streamedResponse));
+      
+      client.close();
+      
+      if (response.statusCode != 200) {
+        print('Failed to fetch room page: ${response.statusCode}');
+        return [];
+      }
 
-      // For now, simulate checking (most rooms don't have photos)
-      await Future.delayed(Duration(milliseconds: 500));
-      return false; // Most rooms don't have photos
-    } catch (e) {
-      print('Error checking for photos: $e');
-      return false;
+      final htmlContent = response.body;
+      print('Successfully fetched HTML (${htmlContent.length} bytes)');
+      
+      // Parse HTML using the html parser
+      final document = html_parser.parse(htmlContent);
+      
+      // Find the Photo heading
+      var photoHeading = document.querySelector('h3');
+      if (photoHeading == null || !photoHeading.text.toLowerCase().contains('photo')) {
+        // Try to find it by searching all h3 elements
+        final allH3s = document.querySelectorAll('h3');
+        var foundPhotoHeading = false;
+        for (final h3 in allH3s) {
+          if (h3.text.toLowerCase().trim() == 'photo') {
+            photoHeading = h3;
+            foundPhotoHeading = true;
+            break;
+          }
+        }
+        if (!foundPhotoHeading || photoHeading == null) {
+          print('No Photo section found in HTML');
+          return [];
+        }
+      }
+      
+      print('Found Photo heading, searching for images...');
+      
+      final photoUrls = <String>[];
+      
+      // Get all elements after the Photo heading
+      // We'll search for img tags in the same parent or following siblings
+      var parentElement = photoHeading.parent;
+      
+      // Search in the parent's children after the Photo heading
+      if (parentElement != null) {
+        bool foundPhotoHeading = false;
+        for (final child in parentElement.children) {
+          if (foundPhotoHeading) {
+            // Look for img tags in this element and its descendants
+            final images = child.querySelectorAll('img');
+            for (final img in images) {
+              final src = img.attributes['src'];
+              if (src != null && src.isNotEmpty) {
+                // Convert relative URLs to absolute
+                String absoluteUrl;
+                if (src.startsWith('http://') || src.startsWith('https://')) {
+                  absoluteUrl = src;
+                } else if (src.startsWith('//')) {
+                  absoluteUrl = 'https:$src';
+                } else if (src.startsWith('/')) {
+                  absoluteUrl = 'https://www.fit.vut.cz$src';
+                } else {
+                  absoluteUrl = 'https://www.fit.vut.cz/$src';
+                }
+                
+                final cleanUrl = absoluteUrl.trim();
+                if (!photoUrls.contains(cleanUrl)) {
+                  photoUrls.add(cleanUrl);
+                  print('Found photo URL: $cleanUrl');
+                }
+              }
+            }
+            
+            // Also check if this element itself is an img tag
+            if (child.localName == 'img') {
+              final src = child.attributes['src'];
+              if (src != null && src.isNotEmpty) {
+                String absoluteUrl;
+                if (src.startsWith('http://') || src.startsWith('https://')) {
+                  absoluteUrl = src;
+                } else if (src.startsWith('//')) {
+                  absoluteUrl = 'https:$src';
+                } else if (src.startsWith('/')) {
+                  absoluteUrl = 'https://www.fit.vut.cz$src';
+                } else {
+                  absoluteUrl = 'https://www.fit.vut.cz/$src';
+                }
+                
+                final cleanUrl = absoluteUrl.trim();
+                if (!photoUrls.contains(cleanUrl)) {
+                  photoUrls.add(cleanUrl);
+                  print('Found photo URL: $cleanUrl');
+                }
+              }
+            }
+            
+            // Stop if we hit another h3 heading
+            if (child.localName == 'h3' || child.localName == 'h2' || child.localName == 'h1') {
+              break;
+            }
+          }
+          
+          if (child == photoHeading) {
+            foundPhotoHeading = true;
+          }
+        }
+      }
+      
+      // Fallback: Use regex if HTML parsing didn't find images
+      if (photoUrls.isEmpty) {
+        print('HTML parsing found no images, trying regex fallback...');
+        
+        // Find the Photo section: look for <h3>Photo</h3>
+        final photoSectionPattern = RegExp(
+          r'<h3[^>]*>\s*Photo\s*</h3>',
+          caseSensitive: false,
+        );
+        
+        final photoSectionMatch = photoSectionPattern.firstMatch(htmlContent);
+        if (photoSectionMatch != null) {
+          // Get the content after the Photo header
+          final photoSectionStart = photoSectionMatch.end;
+          final photoSectionContent = htmlContent.substring(photoSectionStart);
+          
+          // Find the next section (look for next <h3> or </section> to limit scope)
+          final nextSectionPattern = RegExp(
+            r'<h[1-6][^>]*>|</section>',
+            caseSensitive: false,
+          );
+          final nextSectionMatch = nextSectionPattern.firstMatch(photoSectionContent);
+          
+          // Limit search to content between Photo header and next section (or 20000 chars max)
+          final searchLimit = nextSectionMatch != null
+              ? math.min(nextSectionMatch.start, 20000)
+              : math.min(photoSectionContent.length, 20000);
+          final photoSection = photoSectionContent.substring(0, searchLimit);
+          
+          // Extract all img tags - try both double and single quotes
+          final imgPatternDouble = RegExp(
+            r'<img[^>]*src="([^"]+)"',
+            caseSensitive: false,
+          );
+          final imgPatternSingle = RegExp(
+            r"<img[^>]*src='([^']+)'",
+            caseSensitive: false,
+          );
+          
+          final matchesDouble = imgPatternDouble.allMatches(photoSection);
+          final matchesSingle = imgPatternSingle.allMatches(photoSection);
+          
+          for (final match in matchesDouble) {
+            final photoUrl = match.group(1);
+            if (photoUrl != null && photoUrl.isNotEmpty) {
+              // Convert relative URLs to absolute
+              String absoluteUrl;
+              if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+                absoluteUrl = photoUrl;
+              } else if (photoUrl.startsWith('//')) {
+                absoluteUrl = 'https:$photoUrl';
+              } else if (photoUrl.startsWith('/')) {
+                absoluteUrl = 'https://www.fit.vut.cz$photoUrl';
+              } else {
+                absoluteUrl = 'https://www.fit.vut.cz/$photoUrl';
+              }
+              
+              final cleanUrl = absoluteUrl.trim();
+              if (!photoUrls.contains(cleanUrl)) {
+                photoUrls.add(cleanUrl);
+                print('Found photo URL (regex): $cleanUrl');
+              }
+            }
+          }
+          
+          for (final match in matchesSingle) {
+            final photoUrl = match.group(1);
+            if (photoUrl != null && photoUrl.isNotEmpty) {
+              // Convert relative URLs to absolute
+              String absoluteUrl;
+              if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+                absoluteUrl = photoUrl;
+              } else if (photoUrl.startsWith('//')) {
+                absoluteUrl = 'https:$photoUrl';
+              } else if (photoUrl.startsWith('/')) {
+                absoluteUrl = 'https://www.fit.vut.cz$photoUrl';
+              } else {
+                absoluteUrl = 'https://www.fit.vut.cz/$photoUrl';
+              }
+              
+              final cleanUrl = absoluteUrl.trim();
+              if (!photoUrls.contains(cleanUrl)) {
+                photoUrls.add(cleanUrl);
+                print('Found photo URL (regex): $cleanUrl');
+              }
+            }
+          }
+        }
+      }
+      
+      // Debug: Print a sample of the photo section HTML if no photos found
+      if (photoUrls.isEmpty) {
+        print('No photos found. Checking HTML structure...');
+        final photoSectionPattern = RegExp(
+          r'<h3[^>]*>\s*Photo\s*</h3>',
+          caseSensitive: false,
+        );
+        final photoSectionMatch = photoSectionPattern.firstMatch(htmlContent);
+        if (photoSectionMatch != null) {
+          final sampleStart = photoSectionMatch.end;
+          final sampleLength = math.min(1000, htmlContent.length - sampleStart);
+          print('Photo section sample (first $sampleLength chars): ${htmlContent.substring(sampleStart, sampleStart + sampleLength)}');
+        }
+      }
+
+      print('Extracted ${photoUrls.length} photo URL(s)');
+      return photoUrls;
+    } on http.ClientException catch (e) {
+      print('Network error fetching room photos: $e');
+      print('URL: $roomUrl');
+      print('This might be due to network connectivity, server blocking, or invalid URL');
+      return [];
+    } on TimeoutException catch (e) {
+      print('Timeout error fetching room photos: $e');
+      print('URL: $roomUrl');
+      return [];
+    } on Exception catch (e) {
+      print('Error extracting room photos: $e');
+      print('URL: $roomUrl');
+      return [];
     }
   }
 
@@ -934,6 +1352,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               _interactiveController.value.getMaxScaleOnAxis(),
                           mapBounds: Rect.fromLTRB(
                               _mapMinX, _mapMinY, _mapMaxX, _mapMaxY),
+                          paths: _navigationPaths,
+                          trails: _userTrail.isEmpty ? [] : [_userTrail.toMapPath()],
+                          currentLocationRoom: _currentLocationRoom,
                         ),
                         child: Container(),
                       );
@@ -1602,42 +2023,84 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                _roomPhotos.first, // Show only the first photo
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Container(
-                    color: Colors.grey[200],
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded /
-                                loadingProgress.expectedTotalBytes!
-                            : null,
-                      ),
-                    ),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    color: Colors.grey[200],
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.error, color: Colors.grey[600], size: 32),
-                          SizedBox(height: 8),
-                          Text(
-                            'Failed to load photo',
-                            style: TextStyle(color: Colors.grey[600]),
+              child: _roomPhotos.length == 1
+                  ? Image.network(
+                      _roomPhotos.first,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          color: Colors.grey[200],
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              value: loadingProgress.expectedTotalBytes != null
+                                  ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                  : null,
+                            ),
                           ),
-                        ],
-                      ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          color: Colors.grey[200],
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.error, color: Colors.grey[600], size: 32),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Failed to load photo',
+                                  style: TextStyle(color: Colors.grey[600]),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  : PageView.builder(
+                      itemCount: _roomPhotos.length,
+                      itemBuilder: (context, index) {
+                        return Image.network(
+                          _roomPhotos[index],
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              color: Colors.grey[200],
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  value: loadingProgress.expectedTotalBytes != null
+                                      ? loadingProgress.cumulativeBytesLoaded /
+                                          loadingProgress.expectedTotalBytes!
+                                      : null,
+                                ),
+                              ),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey[200],
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.error, color: Colors.grey[600], size: 32),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      'Failed to load photo',
+                                      style: TextStyle(color: Colors.grey[600]),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
           ),
       ],
@@ -1688,6 +2151,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildActionButtonsSection() {
+    final isCurrentLocation = _currentLocationRoom != null && 
+        _selectedRoom != null &&
+        _currentLocationRoom!['id'] == _selectedRoom!['id'];
+    final hasNavigationPath = _navigationPaths.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1700,6 +2168,79 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ),
         SizedBox(height: 12),
+        // Navigation button (only show if not current location)
+        if (!isCurrentLocation)
+          Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  _navigateToRoom(_selectedRoom!);
+                  _closeDrawer();
+                },
+                icon: Icon(Icons.navigation),
+                label: Text('Navigate To This Room'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        // Clear navigation button (only show if navigation path exists)
+        if (hasNavigationPath)
+          Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  _clearNavigation();
+                },
+                icon: Icon(Icons.clear),
+                label: Text('Clear Navigation'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.red,
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        // Current location indicator
+        if (isCurrentLocation)
+          Container(
+            padding: EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green[200]!),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.my_location, color: Colors.green[700], size: 20),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'You are here',
+                    style: TextStyle(
+                      color: Colors.green[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        SizedBox(height: 12),
+        // Share button
         Row(
           children: [
             Expanded(
@@ -1776,13 +2317,20 @@ class BuildingMapPainter extends CustomPainter {
   final double pulseValue;
   final double zoomLevel;
   final Rect mapBounds;
+  final List<MapPath> paths;
+  final List<MapPath> trails;
+  final Map<String, dynamic>? currentLocationRoom;
 
-  BuildingMapPainter(
-      {required this.roomData,
-      required this.highlightedRooms,
-      required this.pulseValue,
-      required this.zoomLevel,
-      required this.mapBounds});
+  BuildingMapPainter({
+    required this.roomData,
+    required this.highlightedRooms,
+    required this.pulseValue,
+    required this.zoomLevel,
+    required this.mapBounds,
+    this.paths = const [],
+    this.trails = const [],
+    this.currentLocationRoom,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1794,15 +2342,32 @@ class BuildingMapPainter extends CustomPainter {
       _drawRoom(canvas, room, size, drawMarker: false);
     }
 
-    // Second pass: Draw all markers on top (ensures markers are always visible)
+    // Second pass: Draw paths (after rooms, before markers)
+    for (final path in paths) {
+      _drawPath(canvas, path, size);
+    }
+    
+    for (final trail in trails) {
+      _drawPath(canvas, trail, size);
+    }
+
+    // Third pass: Draw all markers on top (ensures markers are always visible)
     for (final room in roomData) {
       final roomId = room['id'] as String;
       final isHighlighted = highlightedRooms
           .any((highlightedRoom) => highlightedRoom['id'] == roomId);
+      final isCurrentLocation = currentLocationRoom != null &&
+          currentLocationRoom!['id'] == roomId;
       
-      if (isHighlighted) {
+      if (isHighlighted || isCurrentLocation) {
         final coords = room['coords'] as List<dynamic>;
-        _drawGoogleMarker(canvas, coords, size);
+        if (isCurrentLocation) {
+          // Draw current location with green marker
+          _drawCurrentLocationMarker(canvas, coords, size);
+        } else {
+          // Draw regular highlighted marker
+          _drawGoogleMarker(canvas, coords, size);
+        }
       }
     }
   }
@@ -2144,6 +2709,266 @@ class BuildingMapPainter extends CustomPainter {
       pinRadius * 0.6,
       highlightPaint,
     );
+  }
+
+  /// Draw current location marker (green pin)
+  void _drawCurrentLocationMarker(Canvas canvas, List<dynamic> coords, Size canvasSize) {
+    if (coords.isEmpty) return;
+
+    // Calculate center point of the room
+    double centerX = 0, centerY = 0;
+    for (final coord in coords) {
+      final coordList = coord as List<dynamic>;
+      if (coordList.length >= 2) {
+        final x = (coordList[0] as num).toDouble();
+        final y = (coordList[1] as num).toDouble();
+
+        // Map coordinates to canvas space
+        final mappedX =
+            ((x - mapBounds.left) / mapBounds.width) * canvasSize.width;
+        final mappedY =
+            ((y - mapBounds.top) / mapBounds.height) * canvasSize.height;
+
+        centerX += mappedX;
+        centerY += mappedY;
+      }
+    }
+    centerX /= coords.length;
+    centerY /= coords.length;
+
+    // Marker size based on zoom level
+    const baseMarkerSize = 40.0;
+    final zoomAdjustedSize = baseMarkerSize / zoomLevel.clamp(0.5, 3.0);
+    final markerSize = zoomAdjustedSize * pulseValue;
+    
+    final pinTipX = centerX;
+    final pinTipY = centerY;
+    final pinRadius = markerSize * 0.25;
+    final pinHeight = markerSize * 0.65;
+    final pinHeadCenterY = pinTipY - pinHeight + pinRadius;
+    final triangleWidth = pinRadius * 0.5;
+
+    // Draw shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.25 * pulseValue)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, markerSize * 0.15)
+      ..style = PaintingStyle.fill;
+
+    final shadowPath = Path();
+    shadowPath.addOval(Rect.fromCircle(
+      center: Offset(pinTipX + 1, pinHeadCenterY + 1),
+      radius: pinRadius,
+    ));
+    shadowPath.moveTo(pinTipX + 1, pinHeadCenterY + 1 + pinRadius);
+    shadowPath.lineTo(pinTipX + 1 + triangleWidth, pinTipY + 1);
+    shadowPath.lineTo(pinTipX + 1 - triangleWidth, pinTipY + 1);
+    shadowPath.close();
+    canvas.drawPath(shadowPath, shadowPaint);
+
+    // Draw green pin (current location)
+    final pinPaint = Paint()
+      ..color = Colors.green.withValues(alpha: pulseValue)
+      ..style = PaintingStyle.fill;
+
+    final pinPath = Path();
+    pinPath.addOval(Rect.fromCircle(
+      center: Offset(pinTipX, pinHeadCenterY),
+      radius: pinRadius,
+    ));
+    pinPath.moveTo(pinTipX, pinHeadCenterY + pinRadius);
+    pinPath.lineTo(pinTipX + triangleWidth, pinTipY);
+    pinPath.lineTo(pinTipX - triangleWidth, pinTipY);
+    pinPath.close();
+    
+    canvas.drawPath(pinPath, pinPaint);
+
+    // Draw white border
+    final borderPaint = Paint()
+      ..color = Colors.white.withValues(alpha: pulseValue)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    canvas.drawCircle(
+      Offset(pinTipX, pinHeadCenterY),
+      pinRadius,
+      borderPaint,
+    );
+
+    final borderPath = Path();
+    borderPath.moveTo(pinTipX, pinHeadCenterY + pinRadius);
+    borderPath.lineTo(pinTipX + triangleWidth, pinTipY);
+    borderPath.lineTo(pinTipX - triangleWidth, pinTipY);
+    borderPath.close();
+    canvas.drawPath(borderPath, borderPaint);
+
+    // Draw white center dot
+    final dotPaint = Paint()
+      ..color = Colors.white.withValues(alpha: pulseValue)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(
+      Offset(pinTipX, pinHeadCenterY),
+      pinRadius * 0.4,
+      dotPaint,
+    );
+  }
+
+  /// Draw a path on the map
+  void _drawPath(Canvas canvas, MapPath path, Size canvasSize) {
+    if (path.points.length < 2) return;
+
+    // Map path points from pixel coordinates to canvas space
+    final mappedPoints = path.points.map((point) {
+      final mappedX =
+          ((point.dx - mapBounds.left) / mapBounds.width) * canvasSize.width;
+      final mappedY =
+          ((point.dy - mapBounds.top) / mapBounds.height) * canvasSize.height;
+      return Offset(mappedX, mappedY);
+    }).toList();
+
+    // Create path object
+    final pathObj = Path();
+    pathObj.moveTo(mappedPoints[0].dx, mappedPoints[0].dy);
+    for (int i = 1; i < mappedPoints.length; i++) {
+      pathObj.lineTo(mappedPoints[i].dx, mappedPoints[i].dy);
+    }
+
+    // Create paint based on style
+    final paint = Paint()
+      ..color = path.color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = path.width / zoomLevel.clamp(0.5, 3.0) // Scale with zoom
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    // Handle dashed style (Flutter doesn't have built-in dashed lines, so we draw line segments)
+    if (path.style == PathStyle.dashed) {
+      _drawDashedPath(canvas, mappedPoints, paint);
+    } else if (path.style == PathStyle.dotted) {
+      _drawDottedPath(canvas, mappedPoints, paint);
+    } else {
+      // Draw solid path
+      canvas.drawPath(pathObj, paint);
+    }
+
+    // Draw direction arrows if enabled
+    if (path.showArrows && mappedPoints.length >= 2) {
+      _drawPathArrows(canvas, mappedPoints, path.color, path.width);
+    }
+  }
+
+  /// Draw a dashed path by drawing line segments
+  void _drawDashedPath(Canvas canvas, List<Offset> points, Paint paint) {
+    const double dashLength = 10.0;
+    const double gapLength = 5.0;
+
+    for (int i = 0; i < points.length - 1; i++) {
+      final start = points[i];
+      final end = points[i + 1];
+      final distance = (end - start).distance;
+      
+      if (distance == 0) continue; // Skip zero-length segments
+      
+      final direction = (end - start) / distance;
+
+      double currentDistance = 0.0;
+      bool drawDash = true;
+
+      while (currentDistance < distance) {
+        final segmentLength = drawDash ? dashLength : gapLength;
+        final nextDistance = (currentDistance + segmentLength).clamp(0.0, distance);
+
+        if (drawDash) {
+          final segmentStart = start + direction * currentDistance;
+          final segmentEnd = start + direction * nextDistance;
+          canvas.drawLine(segmentStart, segmentEnd, paint);
+        }
+
+        currentDistance = nextDistance;
+        drawDash = !drawDash;
+      }
+    }
+  }
+
+  /// Draw a dotted path
+  void _drawDottedPath(Canvas canvas, List<Offset> points, Paint paint) {
+    paint.strokeCap = StrokeCap.round;
+    const double dotSpacing = 8.0;
+
+    for (int i = 0; i < points.length - 1; i++) {
+      final start = points[i];
+      final end = points[i + 1];
+      final distance = (end - start).distance;
+      
+      if (distance == 0) continue; // Skip zero-length segments
+      
+      final direction = (end - start) / distance;
+
+      double currentDistance = 0.0;
+      while (currentDistance < distance) {
+        final dotPosition = start + direction * currentDistance;
+        canvas.drawCircle(dotPosition, paint.strokeWidth / 2, paint);
+        currentDistance += dotSpacing;
+      }
+    }
+  }
+
+  /// Draw direction arrows along a path
+  void _drawPathArrows(
+      Canvas canvas, List<Offset> points, Color color, double pathWidth) {
+    final arrowPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    const double arrowSize = 12.0;
+    const double arrowSpacing = 50.0;
+
+    for (int i = 0; i < points.length - 1; i++) {
+      final start = points[i];
+      final end = points[i + 1];
+      final distance = (end - start).distance;
+
+      if (distance < arrowSpacing) {
+        // Draw arrow at midpoint if segment is short
+        final midpoint = Offset.lerp(start, end, 0.5)!;
+        final angle = (end - start).direction;
+        _drawArrow(canvas, midpoint, angle, arrowSize, arrowPaint);
+      } else {
+        // Draw multiple arrows along longer segments
+        final numArrows = (distance / arrowSpacing).floor();
+        for (int j = 0; j < numArrows; j++) {
+          final t = (j + 1) / (numArrows + 1);
+          final arrowPos = Offset.lerp(start, end, t)!;
+          final angle = (end - start).direction;
+          _drawArrow(canvas, arrowPos, angle, arrowSize, arrowPaint);
+        }
+      }
+    }
+  }
+
+  /// Draw a single arrow at a position with a given angle
+  void _drawArrow(
+      Canvas canvas, Offset position, double angle, double size, Paint paint) {
+    final path = Path();
+
+    // Arrow shape (triangle pointing in direction)
+    path.moveTo(position.dx, position.dy);
+    path.lineTo(
+      position.dx - size * math.cos(angle - math.pi / 6),
+      position.dy - size * math.sin(angle - math.pi / 6),
+    );
+    path.lineTo(
+      position.dx - size * math.cos(angle + math.pi / 6),
+      position.dy - size * math.sin(angle + math.pi / 6),
+    );
+    path.close();
+
+    canvas.save();
+    canvas.translate(position.dx, position.dy);
+    canvas.rotate(angle);
+    canvas.translate(-position.dx, -position.dy);
+    canvas.drawPath(path, paint);
+    canvas.restore();
   }
 
   @override
