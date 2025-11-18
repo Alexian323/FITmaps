@@ -8,7 +8,7 @@ parser.add_argument("-i", "--input", default="data/raw_htmls", help="Path to the
 parser.add_argument("-o", "--save_path", default="data/parsed_data/maps_data_full.json", help="Path to the output JSON file")
 
 extra_paths = [
-    [400, 590, 200, 16], ##x y w h
+    [30, 590, 1000, 16], ##x y w h
     [486, 556, 20, 32],
     [486, 308, 42, 192],
     [528, 390, 56, 28],
@@ -64,9 +64,30 @@ def extract_rooms(soups):
                     "coords": coords
                 }
             })
-            # print(link)
-            # print(title)
-        # print(rooms)
+        
+        doors_group = soup.find("g", {"id": "doors"})
+        # print(doors_group)
+        door_idx = 0
+        for l in doors_group.find_all("line", recursive=False):
+            x1 = float(l["x1"])
+            y1 = float(l["y1"])
+            x2 = float(l["x2"])
+            y2 = float(l["y2"])
+            coords = [(x1, y1), (x2, y2)]
+            door_id = f"door_{floor_no}_{door_idx}"
+            door_idx += 1
+            rooms.append({
+                door_id: {
+                    "title": "door",
+                    "onclick": "",
+                    "floor_no": floor_no,
+                    "room_tag": "",
+                    "coords": coords
+                }
+            })
+        # print(link)
+        # print(title)
+    # print(rooms)
     for extra in extra_paths:
         x, y, w, h = extra
         coords = [(x, y), (x+w, y), (x+w, y+h), (x, y+h)]
