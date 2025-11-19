@@ -42,17 +42,17 @@ class MapPath {
     this.id,
   });
 
-  /// Create a navigation path (blue, with arrows)
+  /// Create a navigation path (bright cyan/teal, distinct color for visibility)
   factory MapPath.navigation({
     required List<Offset> points,
     String? id,
   }) {
     return MapPath(
       points: points,
-      color: Colors.blue,
-      width: 6.0,
+      color: const Color(0xFF00CED1), // Dark turquoise/cyan - distinct, professional, and eye-catching
+      width: 8.0, // Increased from 6.0 for better visibility
       style: PathStyle.solid,
-      showArrows: true,
+      showArrows: false, // Arrows disabled per user request
       id: id,
     );
   }
@@ -160,6 +160,7 @@ class PathUtils {
 
   /// Generate a path that routes through corridors using Manhattan distance
   /// (only horizontal/vertical movements, right-angle corners, no diagonals)
+  /// The path will stay within corridors when possible
   static List<Offset> generatePathThroughCorridors(
     Map<String, dynamic> startRoom,
     Map<String, dynamic> endRoom,
@@ -189,105 +190,204 @@ class PathUtils {
       return title.contains('corridor') && roomFloor == startFloor;
     }).toList();
 
+    print('Found ${corridors.length} corridors on floor $startFloor');
+    if (corridors.isNotEmpty) {
+      print('Corridor IDs: ${corridors.map((c) => c['id']).join(', ')}');
+    }
+
     // If no corridors found, use Manhattan path directly
     if (corridors.isEmpty) {
+      print('No corridors found, using direct Manhattan path');
       return _generateManhattanPath(startCenter, endCenter);
     }
 
-    // Find nearest corridor to start room
-    Map<String, dynamic>? nearestStartCorridor;
-    double minStartDistance = double.infinity;
-    Offset? startCorridorPoint;
+    // Find the best corridor path from start to end
+    final path = _findPathThroughCorridors(
+      startCenter,
+      endCenter,
+      corridors,
+    );
 
+    return path;
+  }
+
+  /// Find a path through corridors, staying within corridor boundaries when possible
+  static List<Offset> _findPathThroughCorridors(
+    Offset start,
+    Offset end,
+    List<Map<String, dynamic>> corridors,
+  ) {
+    final path = <Offset>[start];
+
+    // Find corridors that contain or are near the start and end points
+    Map<String, dynamic>? startCorridor;
+    Map<String, dynamic>? endCorridor;
+    Offset? startExitPoint;
+    Offset? endEntryPoint;
+
+    // Find corridor containing or nearest to start
+    double minStartDist = double.infinity;
     for (final corridor in corridors) {
       final corridorCoords = corridor['coords'] as List<dynamic>? ?? [];
       if (corridorCoords.isEmpty) continue;
 
-      // Check if we can use a point on the corridor edge (closer to start)
-      final closestPoint = _findClosestPointOnRoom(startCenter, corridorCoords);
-      final closestDist = _manhattanDistance(startCenter, closestPoint);
+      // Check if start is inside corridor
+      if (_isPointInRoom(start, corridorCoords)) {
+        startCorridor = corridor;
+        startExitPoint = start; // Use start point directly if inside corridor
+        break;
+      }
 
-      if (closestDist < minStartDistance) {
-        minStartDistance = closestDist;
-        nearestStartCorridor = corridor;
-        startCorridorPoint = closestPoint;
+      // Otherwise find closest point on corridor
+      final closestPoint = _findClosestPointOnRoom(start, corridorCoords);
+      final dist = _manhattanDistance(start, closestPoint);
+      if (dist < minStartDist) {
+        minStartDist = dist;
+        startCorridor = corridor;
+        startExitPoint = closestPoint;
       }
     }
 
-    // Find nearest corridor to end room
-    Map<String, dynamic>? nearestEndCorridor;
-    double minEndDistance = double.infinity;
-    Offset? endCorridorPoint;
-
+    // Find corridor containing or nearest to end
+    double minEndDist = double.infinity;
     for (final corridor in corridors) {
       final corridorCoords = corridor['coords'] as List<dynamic>? ?? [];
       if (corridorCoords.isEmpty) continue;
 
-      final closestPoint = _findClosestPointOnRoom(endCenter, corridorCoords);
-      final closestDist = _manhattanDistance(endCenter, closestPoint);
+      // Check if end is inside corridor
+      if (_isPointInRoom(end, corridorCoords)) {
+        endCorridor = corridor;
+        endEntryPoint = end; // Use end point directly if inside corridor
+        break;
+      }
 
-      if (closestDist < minEndDistance) {
-        minEndDistance = closestDist;
-        nearestEndCorridor = corridor;
-        endCorridorPoint = closestPoint;
+      // Otherwise find closest point on corridor
+      final closestPoint = _findClosestPointOnRoom(end, corridorCoords);
+      final dist = _manhattanDistance(end, closestPoint);
+      if (dist < minEndDist) {
+        minEndDist = dist;
+        endCorridor = corridor;
+        endEntryPoint = closestPoint;
       }
     }
 
-    // Build path with Manhattan distance (only horizontal/vertical movements)
-    final path = <Offset>[];
-    path.add(startCenter);
-
-    // Add corridor waypoints if found
-    if (nearestStartCorridor != null && startCorridorPoint != null) {
-      // Connect start to corridor using Manhattan path
-      final startToCorridor = _generateManhattanPath(startCenter, startCorridorPoint);
-      if (startToCorridor.length > 1) {
-        path.addAll(startToCorridor.sublist(1)); // Skip first point (already added)
-      }
-
-      // If start and end corridors are different, route through corridors
-      if (nearestStartCorridor != nearestEndCorridor && nearestEndCorridor != null) {
-        // Route from start corridor to end corridor through corridor centers
-        final startCorridorCenter = getRoomCenter(
-          nearestStartCorridor['coords'] as List<dynamic>? ?? []
-        );
-        final endCorridorCenter = getRoomCenter(
-          nearestEndCorridor['coords'] as List<dynamic>? ?? []
-        );
-        
-        // Connect through corridor centers using Manhattan path
-        final corridorToCorridor = _generateManhattanPath(startCorridorCenter, endCorridorCenter);
-        if (corridorToCorridor.length > 1) {
-          path.addAll(corridorToCorridor.sublist(1)); // Skip first point
+    print('Start corridor: ${startCorridor != null ? startCorridor['id'] : 'null'}');
+    print('End corridor: ${endCorridor != null ? endCorridor['id'] : 'null'}');
+    
+    // Build path through corridors
+    if (startCorridor != null && startExitPoint != null) {
+      // Path from start to corridor entry
+      if (startExitPoint != start) {
+        final startToCorridor = _generateManhattanPath(start, startExitPoint);
+        if (startToCorridor.length > 1) {
+          path.addAll(startToCorridor.sublist(1));
         }
       }
 
-      if (endCorridorPoint != null) {
-        // Connect from corridor to end using Manhattan path
-        final lastPoint = path.isNotEmpty ? path.last : startCorridorPoint;
-        final corridorToEnd = _generateManhattanPath(
-          lastPoint,
-          endCorridorPoint,
-        );
+      // If both start and end are in the same corridor, route through it
+      if (startCorridor == endCorridor && endCorridor != null && endEntryPoint != null) {
+        // Route through the corridor center to stay within it
+        final corridorCenter = getRoomCenter(startCorridor['coords'] as List<dynamic>? ?? []);
+        final currentPoint = path.isNotEmpty ? path.last : startExitPoint;
+        
+        // Route to corridor center, then to end entry point
+        if (_manhattanDistance(currentPoint, corridorCenter) > 5.0) {
+          final toCenter = _generateManhattanPath(currentPoint, corridorCenter);
+          if (toCenter.length > 1) {
+            path.addAll(toCenter.sublist(1));
+          }
+        }
+        
+        if (endEntryPoint != end) {
+          final centerToEntry = _generateManhattanPath(corridorCenter, endEntryPoint);
+          if (centerToEntry.length > 1) {
+            path.addAll(centerToEntry.sublist(1));
+          }
+        }
+      } else if (endCorridor != null && endEntryPoint != null) {
+        // Different corridors - route through corridor centers
+        final startCorridorCenter = getRoomCenter(startCorridor['coords'] as List<dynamic>? ?? []);
+        final endCorridorCenter = getRoomCenter(endCorridor['coords'] as List<dynamic>? ?? []);
+        final currentPoint = path.isNotEmpty ? path.last : startExitPoint;
+
+        // Route to start corridor center
+        if (_manhattanDistance(currentPoint, startCorridorCenter) > 5.0) {
+          final toStartCenter = _generateManhattanPath(currentPoint, startCorridorCenter);
+          if (toStartCenter.length > 1) {
+            path.addAll(toStartCenter.sublist(1));
+          }
+        }
+
+        // Route from start corridor center to end corridor center
+        final corridorToCorridor = _generateManhattanPath(startCorridorCenter, endCorridorCenter);
+        if (corridorToCorridor.length > 1) {
+          path.addAll(corridorToCorridor.sublist(1));
+        }
+
+        // Route from end corridor center to end entry point
+        if (endEntryPoint != end) {
+          final centerToEntry = _generateManhattanPath(endCorridorCenter, endEntryPoint);
+          if (centerToEntry.length > 1) {
+            path.addAll(centerToEntry.sublist(1));
+          }
+        }
+      }
+
+      // Path from corridor exit to end
+      if (endEntryPoint != null && endEntryPoint != end) {
+        final corridorToEnd = _generateManhattanPath(endEntryPoint, end);
         if (corridorToEnd.length > 1) {
-          path.addAll(corridorToEnd.sublist(1)); // Skip first point
+          path.addAll(corridorToEnd.sublist(1));
         }
       }
     } else {
-      // No corridors found, use direct Manhattan path
-      final directPath = _generateManhattanPath(startCenter, endCenter);
+      // No corridors found nearby, use direct Manhattan path
+      final directPath = _generateManhattanPath(start, end);
       if (directPath.length > 1) {
-        path.addAll(directPath.sublist(1)); // Skip first point (already added)
+        path.addAll(directPath.sublist(1));
       }
     }
 
-    path.add(endCenter);
+    path.add(end);
 
     // Remove duplicate consecutive points
     return _removeDuplicatePoints(path);
   }
 
+  /// Check if a point is inside a room (using ray casting algorithm)
+  static bool _isPointInRoom(Offset point, List<dynamic> roomCoords) {
+    if (roomCoords.length < 3) return false;
+
+    int intersections = 0;
+    for (int i = 0; i < roomCoords.length; i++) {
+      final coord1 = roomCoords[i] as List<dynamic>;
+      final coord2 = roomCoords[(i + 1) % roomCoords.length] as List<dynamic>;
+
+      if (coord1.length >= 2 && coord2.length >= 2) {
+        final p1 = Offset(
+          (coord1[0] as num).toDouble(),
+          (coord1[1] as num).toDouble(),
+        );
+        final p2 = Offset(
+          (coord2[0] as num).toDouble(),
+          (coord2[1] as num).toDouble(),
+        );
+
+        // Ray casting: check if horizontal ray from point intersects edge
+        if ((p1.dy > point.dy) != (p2.dy > point.dy)) {
+          final xIntersect = (point.dy - p1.dy) * (p2.dx - p1.dx) / (p2.dy - p1.dy) + p1.dx;
+          if (point.dx < xIntersect) {
+            intersections++;
+          }
+        }
+      }
+    }
+
+    return intersections % 2 == 1; // Odd number of intersections means point is inside
+  }
+
   /// Generate a Manhattan path (only horizontal/vertical movements, right-angle corners)
+  /// This ensures strictly right-angled paths with no diagonals
   static List<Offset> _generateManhattanPath(Offset start, Offset end) {
     final path = <Offset>[start];
     
@@ -297,16 +397,26 @@ class PathUtils {
     final dx = end.dx - start.dx;
     final dy = end.dy - start.dy;
     
-    // Determine which direction to move first
-    if (dx.abs() > dy.abs()) {
-      // Move horizontally first, then vertically
-      path.add(Offset(end.dx, start.dy)); // Horizontal move
-      path.add(end); // Vertical move
-    } else {
-      // Move vertically first, then horizontally
-      path.add(Offset(start.dx, end.dy)); // Vertical move
-      path.add(end); // Horizontal move
+    // If both movements are needed, create right angle
+    if (dx.abs() > 0.1 && dy.abs() > 0.1) {
+      // Determine which direction to move first based on larger distance
+      if (dx.abs() > dy.abs()) {
+        // Move horizontally first, then vertically
+        path.add(Offset(end.dx, start.dy)); // Horizontal move
+        path.add(end); // Vertical move
+      } else {
+        // Move vertically first, then horizontally
+        path.add(Offset(start.dx, end.dy)); // Vertical move
+        path.add(end); // Horizontal move
+      }
+    } else if (dx.abs() > 0.1) {
+      // Only horizontal movement
+      path.add(end);
+    } else if (dy.abs() > 0.1) {
+      // Only vertical movement
+      path.add(end);
     }
+    // If both are zero or very small, just return start point
     
     return path;
   }
