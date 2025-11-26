@@ -5,7 +5,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description="Extract room data from map SVG HTML file")
 parser.add_argument("-i", "--input", default="data/raw_htmls", help="Path to the input HTML folder")
-parser.add_argument("-o", "--save_path", default="data/parsed_data/maps_data_full.json", help="Path to the output JSON file")
+parser.add_argument("-o", "--save_path", default="data/parsed_data/maps_data_full_with_floor_no.json", help="Path to the output JSON file")
 
 extra_paths = [
     [30, 590, 1000, 16], ##x y w h
@@ -44,7 +44,7 @@ def extract_rooms(soups):
                 room_tag = " not wheelchair accessible"
             shape = g.find(["polygon", "rect"])
             assert shape is not None
-            room_id = shape.get("id", "")
+            room_id = shape.get("id", "") + "__" + floor_no
             coords = []
 
             if shape.name == "polygon":
@@ -74,7 +74,7 @@ def extract_rooms(soups):
             x2 = float(l["x2"])
             y2 = float(l["y2"])
             coords = [(x1, y1), (x2, y2)]
-            door_id = f"door_{floor_no}_{door_idx}"
+            door_id = f"door_{door_idx}__{floor_no}"
             door_idx += 1
             rooms.append({
                 door_id: {
@@ -92,10 +92,10 @@ def extract_rooms(soups):
         x, y, w, h = extra
         coords = [(x, y), (x+w, y), (x+w, y+h), (x, y+h)]
         rooms.append({
-            f"extra_{x}_{y}": {
+            f"extra_{x}_{y}__+1": {
                 "title": "extra_area",
                 "onclick": "",
-                "floor_no": "extra",
+                "floor_no": "+1",
                 "room_tag": "",
                 "coords": coords
             }
