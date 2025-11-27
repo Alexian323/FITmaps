@@ -1,0 +1,978 @@
+id,name,floor
+D006__-2,D006 Staircase,-2
+D008__-2,D008 Staircase,-2
+D0201__-2,D0201 Foyer,-2
+D0202__-2,D0202 Aircondition,-2
+D0203__-2,D0203 Technology Room,-2
+D0205__-2,D0205 Elevator,-2
+D0206__-2,D0206 Lecture Room 154,-2
+D0207__-2,D0207 Lecture Room 90,-2
+D0209__-2,D0209 Cleaning Room,-2
+Q0201__-2,Q0201 Staircase,-2
+Q0202__-2,Q0202 Cellar,-2
+Q0203__-2,Q0203 Cellar,-2
+Q0204__-2,Q0204 Cellar,-2
+Q0205__-2,Q0205 Corridor,-2
+Q0206__-2,Q0206 Staircase,-2
+A000__-1,A000 Staircase,-1
+A001__-1,A001 Corridor,-1
+A002__-1,A002 Corridor,-1
+A003__-1,A003 Cellar,-1
+C001__-1,C001 Corridor,-1
+C002__-1,C002 Corridor,-1
+C003__-1,C003 Cellar,-1
+C004__-1,C004 Cellar,-1
+C005__-1,C005 Corridor,-1
+C006__-1,C006 Corridor,-1
+C007__-1,C007 Corridor,-1
+C008__-1,C008 Common Room FIT - Wine Bar,-1
+C009__-1,C009 Technical Room - Pumps,-1
+C010__-1,C010 Corridor,-1
+C011__-1,C011 Substation,-1
+C012__-1,C012 Corridor,-1
+C013__-1,C013 Corridor,-1
+C014__-1,C014 Cellar,-1
+C015__-1,C015 Cellar,-1
+C016__-1,C016 Cellar,-1
+C017__-1,C017 Cellar,-1
+C018__-1,C018 Cellar,-1
+C133.1__-1,C133.1 Staircase,-1
+D001__-1,D001 Staircase,-1
+D002__-1,D002 Corridor,-1
+D003__-1,D003 Toilets (men),-1
+D003.1__-1,D003.1 Toilets (men),-1
+D004__-1,D004 Toilets (women),-1
+D004.1__-1,D004.1 Toilets (woman),-1
+D004.2__-1,D004.2 Cleaning Room,-1
+D005__-1,D005 Aircondition,-1
+D006__-1,D006 Staircase,-1
+D007__-1,D007 Elevator,-1
+D008__-1,D008 Staircase,-1
+D009__-1,D009 Light well,-1
+D010__-1,D010 Light well,-1
+E001__-1,E001 Entrance,-1
+E002__-1,E002 Garden Equipment Warehouse,-1
+E003__-1,E003 Distribution Room,-1
+E004__-1,E004 Storage Room,-1
+E005__-1,E005 Storage Room,-1
+E006__-1,E006 Storage Room,-1
+E007__-1,E007 Cloak Room,-1
+E007.1__-1,"E007.1 Toilets, Washroom",-1
+E008__-1,E008 Air Conditioning,-1
+E009__-1,E009 Cloak Room,-1
+E010__-1,E010 Cleaning Room,-1
+E011__-1,E011 Storage Room,-1
+E012__-1,E012 Storage Room,-1
+E013__-1,E013 Toilets (men),-1
+E013.1__-1,E013.1 Toilets (men),-1
+E014__-1,E014 Toilets (women),-1
+E014.1__-1,E014.1 Toilets (women),-1
+E015__-1,E015 LV Substation,-1
+E016__-1,E016 Central Heating,-1
+E017__-1,E017 Workshop,-1
+E018__-1,E018 Office,-1
+E019__-1,"E019 Dispatching, Office",-1
+E020__-1,E020 Office,-1
+E022__-1,"E022 Toilets, Washroom",-1
+E026__-1,E026 Corridor,-1
+F001__-1,F001 Staircase - outdoor,-1
+F002__-1,F002 Corridor,-1
+F003__-1,F003 Corridor,-1
+F004__-1,F004 Exchanger,-1
+F005__-1,F005 Storage Room,-1
+F006__-1,F006 Storage Room,-1
+F007__-1,F007 Toilets,-1
+G001__-1,G001 Air Conditioning,-1
+G001.1__-1,G001.1 Corridor,-1
+G002__-1,G002 Substation,-1
+I000__-1,I000 Staircase,-1
+I001__-1,I001 Corridor,-1
+I002__-1,I002 Cellar,-1
+I003__-1,I003 Cellar,-1
+I005__-1,I005 Cellar,-1
+L001__-1,L001 Staircase,-1
+L001.1__-1,L001.1 Storage Room,-1
+L002__-1,L002 Corridor,-1
+L003__-1,L003 Corridor,-1
+L004__-1,L004 DHW Boiler Room,-1
+L004.1__-1,L004.1 Boiler room,-1
+L005__-1,L005 Air Conditioning Engine Room,-1
+L006__-1,L006 Cooling Source,-1
+L007__-1,L007 LV Substation,-1
+L008__-1,L008 Motor Generator,-1
+L008.1__-1,L008.1 Light well,-1
+L009__-1,L009 Switch room,-1
+L009.1__-1,L009.1 Transformers,-1
+L009.2__-1,L009.2 Light well,-1
+L010__-1,L010 Fire Escape Staircase,-1
+L011__-1,L011 UPS room,-1
+L012__-1,L012 Main switch room,-1
+L013__-1,L013 Storage Room,-1
+L014__-1,L014 Corridor,-1
+L015__-1,L015 Storage Room,-1
+L016__-1,L016 Storage Room,-1
+L017.1__-1,L017.1 CNC Milling Machine Laboratory,-1
+L017.2__-1,L017.2 CNC Milling Machine Laboratory,-1
+L018__-1,L018 Cloak Room,-1
+L018.1__-1,L018.1 Cloak Room,-1
+L018.2__-1,L018.2 Bathroom,-1
+L019__-1,L019 Elevator,-1
+L020__-1,L020 Cleaning Room,-1
+L021__-1,L021 Corridor,-1
+L022__-1,L022 Server Room,-1
+L023__-1,L023 Server Workshop,-1
+L024__-1,L024 Computer Workshop,-1
+L025__-1,L025 Storage Room,-1
+L026__-1,L026 Staircase,-1
+L027__-1,L027 Storage Room,-1
+L028__-1,L028 Washroom,-1
+L028.1__-1,L028.1 Toilets (men),-1
+L028.2__-1,L028.2 Toilets (accessible),-1
+L029__-1,L029 Bathroom,-1
+L030__-1,L030 Washroom,-1
+L030.1__-1,L030.1 Toilets (accessible),-1
+L031__-1,L031 Corridor,-1
+L033__-1,L033 Vehicle Entrance Ramp,-1
+L034__-1,L034 Underground Parking,-1
+L035__-1,L035 Staircase,-1
+L036__-1,L036 Bicycle Parking,-1
+L037__-1,L037 Storage Room,-1
+P001__-1,P001 Staircase,-1
+P002__-1,P002 Cellar,-1
+P003__-1,P003 Cellar,-1
+Q0101__-1,Q0101 Corridor,-1
+Q0102__-1,Q0102 Staircase,-1
+Q0103__-1,Q0103 Elevator,-1
+Q0104__-1,Q0104 Technology Room,-1
+Q0105__-1,Q0105 Corridor,-1
+Q0106__-1,Q0106 Toilets (women),-1
+Q0106.1__-1,Q0106.1 Toilets (women),-1
+Q0107__-1,Q0107 Toilets (men),-1
+Q0107.1__-1,Q0107.1 Toilets (men),-1
+Q0108__-1,Q0108 Corridor,-1
+Q0109__-1,Q0109 Corridor,-1
+Q0110__-1,Q0110 Cellar,-1
+Q0113__-1,Q0113 Hall,-1
+Q0114__-1,Q0114 Toilets (women),-1
+Q0114.1__-1,Q0114.1 Toilets (women),-1
+Q0115__-1,Q0115 Cloak Room,-1
+Q0116__-1,Q0116 Toilets (accessible),-1
+Q0117__-1,Q0117 Toilets (men),-1
+Q0117.1__-1,Q0117.1 Toilets (men),-1
+Q0118__-1,Q0118 Storage Room,-1
+Q0119__-1,Q0119 Elevator,-1
+Q0120__-1,Q0120 Staircase,-1
+Q0201__-1,Q0201 Staircase,-1
+Q0206__-1,Q0206 Staircase,-1
+S001__-1,S001 Cellar,-1
+S002__-1,S002 Staircase,-1
+A101__+1,A101 Entrance Hall,1
+A101.1__+1,A101.1 Entrance Hall,1
+A103__+1,A103 Corridor,1
+A104__+1,A104 Corridor,1
+A105__+1,A105 Toilets (women),1
+A106__+1,A106 Toilets (men),1
+A106.1__+1,A106.1 Toilets (men),1
+A106.3__+1,A106.3 Cleaning Room,1
+A107__+1,A107 Elevator,1
+A108__+1,A108 Staircase,1
+A109__+1,A109 O2 Exchange,1
+A110__+1,A110 Cloak Room,1
+A111__+1,A111 Technical Room,1
+A111.1__+1,A111.1 Technical Room,1
+A112__+1,A112 Lecture Room 64,1
+A113__+1,A113 Lecture Room 64,1
+A114__+1,A114 Corridor,1
+A115__+1,A115 Toilets (women),1
+A116__+1,A116 Toilets (men),1
+A116.1__+1,A116.1 Toilets (accessible),1
+A116.2__+1,A116.2 Toilets (men),1
+A117__+1,A117 FIT Museum,1
+A118__+1,A118 FIT Museum,1
+A119__+1,A119 FIT Museum,1
+A120__+1,A120 FIT Museum,1
+A121__+1,A121 Office,1
+A122__+1,A122 Technical Room,1
+A123__+1,A123 Technical Room,1
+C102__+1,C102 Boiler room,1
+C103__+1,C103 Boiler room,1
+C104__+1,C104 Cooling,1
+C105__+1,C105 Technical Room,1
+C106__+1,C106 Corridor,1
+C107__+1,C107 Corridor,1
+C108__+1,C108 Corridor,1
+C109__+1,C109 Student's Affairs,1
+C109.1__+1,C109.1 Conference Room,1
+C109.2__+1,C109.2 Student's Affairs,1
+C109.3__+1,C109.3 Archive,1
+C110__+1,C110 Staircase,1
+C111__+1,C111 Registry,1
+C112__+1,C112 Technical Room,1
+C113__+1,C113 Toilets (staff),1
+C113.1__+1,C113.1 Toilets (staff),1
+C114__+1,C114 Library Entrance,1
+C114.1__+1,C114.1 Cloak room,1
+C114.2__+1,C114.2 Cloak room,1
+C114.3__+1,"C114.3 Mail room, registry administrator",1
+C115__+1,C115 Librarian,1
+C116__+1,C116 Ramp,1
+C117__+1,C117 Library,1
+C118__+1,C118 Corridor,1
+C120__+1,C120 Copy Room,1
+C121__+1,C121 Toilets (women),1
+C121.1__+1,C121.1 Toilets (women),1
+C122__+1,C122 Toilets (men),1
+C122.1__+1,C122.1 Cleaning Room,1
+C122.2__+1,C122.2 Toilets (men),1
+C122.3__+1,C122.3 Toilets (men),1
+C123__+1,C123 Study Room,1
+C124__+1,C124 Technical Room,1
+C126__+1,C126 Study Room,1
+C127__+1,C127 Corridor,1
+C127.1__+1,C127.1 Seminar Room 2,1
+C128__+1,C128 Seminar Room 1,1
+C129__+1,C129 Library Archive,1
+C130__+1,C130 Registry,1
+C131__+1,C131 Registry,1
+C132__+1,C132 Lawyer,1
+C133__+1,C133 Corridor,1
+C133.1__+1,C133.1 Staircase,1
+C134__+1,C134 Staircase,1
+C135__+1,C135 Toilets (women),1
+C135.1__+1,C135.1 Toilets (women),1
+C136__+1,C136 Toilets (men),1
+C136.1__+1,C136.1 Toilets (men),1
+C137__+1,C137 Lawyer,1
+C138__+1,C138 Staircase,1
+C001__+1,C001 Technical Room,1
+D001__+1,D001 Staircase,1
+D101__+1,D101 Entrance,1
+D102__+1,D102 Entrance Hall,1
+D104__+1,D104 Corridor,1
+D105__+1,D105 Lecture Room 300,1
+D106__+1,D106 Staircase,1
+D107__+1,D107 Elevator,1
+E102__+1,E102 Corridor,1
+E103__+1,E103 Corridor,1
+E104__+1,E104 Lecture Room 72,1
+E105__+1,E105 Lecture Room 72,1
+E106__+1,E106 A/V Engineer,1
+E107__+1,E107 Toilets (accessible),1
+E108__+1,E108 Cleaning Room,1
+E109__+1,E109 Storage Room,1
+E110__+1,"E110 Sound Engineer, Interpreter",1
+E112__+1,E112 Lecture Room 156,1
+E113__+1,E113 Washroom (woman),1
+E114__+1,E114 Washroom (men),1
+E115__+1,E115 Toilets (woman),1
+E116__+1,E116 Toilets (men),1
+F001__+1,F001 Staircase - outdoor,1
+F101__+1,F101 Corridor,1
+F103__+1,F103 Corridor,1
+F104__+1,F104 Corridor,1
+F105__+1,F105 Kitchen,1
+F106__+1,F106 Economics Department,1
+F107__+1,F107 Registry,1
+F108.1__+1,F108.1 Archive of Economic Department FIT,1
+F108.2__+1,F108.2 Technical Room,1
+F109__+1,F109 Corridor,1
+F110__+1,F110 Office,1
+F111__+1,F111 Office,1
+F112__+1,F112 Registry,1
+F113__+1,F113 Corridor,1
+F114__+1,F114 Science Department,1
+F115__+1,F115 Science Department,1
+F117__+1,F117 Toilets,1
+F118__+1,F118 Corridor,1
+F119__+1,F119 International Department,1
+F120__+1,F120 External Relations,1
+F121__+1,F121 Staircase,1
+F200__+1,F200 Staircase,1
+F209__+1,F209 Staircase,1
+G002__+1,G002 Substation,1
+G101__+1,G101 Corridor,1
+G102__+1,G102 Toilets (women),1
+G102.1__+1,G102.1 Toilets (women),1
+G103__+1,G103 Toilets (men),1
+G103.1__+1,G103.1 Toilets (men),1
+G103.2__+1,G103.2 Toilets (accessible),1
+G104__+1,G104 Seminar Room,1
+G105__+1,G105 Kitchen,1
+G106__+1,G106 Staircase,1
+G107__+1,G107 Foyer,1
+G108__+1,G108 Conference Room,1
+G109__+1,G109 Kitchen,1
+H101__+1,H101 Morgue,1
+I000__+1,I000 Staircase,1
+I101.1__+1,I101.1 Corridor,1
+I101.2__+1,I101.2 Technical Room,1
+I101.3__+1,I101.3 Technical Room,1
+I102__+1,I102 Hall,1
+I103__+1,I103 Room,1
+I103.1__+1,I103.1 Kitchen,1
+I104__+1,I104 Toilets,1
+I105__+1,I105 Staircase,1
+I106__+1,I106 Hall,1
+I107__+1,I107 Room,1
+I108__+1,I108 Toilets,1
+I109__+1,I109 Staircase,1
+I110__+1,I110 Hall,1
+I111__+1,I111 Room,1
+I112__+1,I112 Toilets,1
+I113__+1,I113 Staircase,1
+I114__+1,I114 Hall,1
+I115__+1,I115 Room,1
+I116__+1,I116 Toilets,1
+I117__+1,I117 Staircase,1
+I118__+1,I118 Hall,1
+I119__+1,I119 Room,1
+I119.1__+1,I119.1 Kitchen,1
+I120__+1,I120 Toilets,1
+I121__+1,I121 Staircase,1
+J101__+1,J101 Transformer Stations,1
+J102__+1,J102 Transformer Stations,1
+J103__+1,J103 Transformer Stations,1
+J104__+1,J104 Waste,1
+J105__+1,J105 Waste,1
+L035__+1,L035 Staircase,1
+L102__+1,L102 Entrance,1
+L103__+1,L103 Entrance Hall,1
+L103.1__+1,L103.1 Staircase,1
+L104__+1,L104 Cafe,1
+L105__+1,L105 Terrace,1
+L106__+1,L106 Fire Escape Staircase,1
+L107__+1,L107 Facilities,1
+L107.1__+1,L107.1 Storage Room,1
+L107.2__+1,L107.2 Toilets,1
+L107.3__+1,L107.3 Cloak Room,1
+L108__+1,L108 Reception Desk,1
+L108.1__+1,L108.1 Technology Room,1
+L108.2__+1,L108.2 Reception Facilities,1
+L108.3__+1,L108.3 Toilets (reception),1
+L109__+1,L109 Corridor,1
+L110__+1,L110 Staircase,1
+L111__+1,L111 Elevator,1
+L112__+1,L112 Cleaning Room,1
+L113__+1,L113 Corridor,1
+L114__+1,L114 Kitchen,1
+L115__+1,L115 Conference Room,1
+L116__+1,L116 Conference Room of Computer Centre,1
+L117__+1,L117 Server Laboratory,1
+L118__+1,L118 Videoconference Room,1
+L119__+1,L119 Computer Warehouse,1
+L120__+1,L120 Computer Centre Workshop,1
+L121__+1,L121 Fire Escape Staircase,1
+L122__+1,L122 Fire Escape - no entry,1
+L123__+1,L123 Office,1
+L124__+1,L124 Office,1
+L125__+1,L125 A/V Laboratory,1
+L126__+1,L126 Office,1
+L127__+1,L127 Office,1
+L128__+1,L128 Office,1
+L129__+1,L129 Office,1
+L130__+1,L130 Office,1
+L131__+1,L131 Office,1
+L132__+1,L132 Technical Room,1
+L133__+1,L133 Washroom,1
+L133.1__+1,L133.1 Toilets (men),1
+L133.2__+1,L133.2 Toilets (accessible),1
+L134__+1,L134 Washroom,1
+L134.1__+1,L134.1 Toilets (women),1
+L134.2__+1,L134.2 Toilets (accessible),1
+M101__+1,M101 Corridor,1
+M102__+1,M102 Distribution Room,1
+M103__+1,M103 Computer Laboratory,1
+M104__+1,M104 Lecture Room,1
+M105__+1,M105 Lecture Room,1
+M107__+1,M107 Staircase,1
+N101__+1,N101 Corridor,1
+N102__+1,N102 Staircase,1
+N103__+1,N103 Computer Laboratory,1
+N104__+1,N104 Computer Laboratory,1
+N105__+1,N105 Computer Laboratory,1
+N107__+1,N107 Washroom,1
+N107.1__+1,N107.1 Toilets (women),1
+N108__+1,N108 Cleaning Room,1
+N109__+1,N109 Washroom,1
+N109.1__+1,N109.1 Toilets (men),1
+O101__+1,O101 Corridor,1
+O102__+1,O102 Staircase,1
+O103__+1,O103 Aero Simulation Laboratory,1
+O104__+1,O104 Robotic Laboratory,1
+O105__+1,O105 Robotic Laboratory,1
+O107__+1,O107 Washroom,1
+O107.1__+1,O107.1 Toilets (women),1
+O108__+1,O108 Washroom,1
+O108.1__+1,O108.1 Toilets (men),1
+O109__+1,O109 Cleaning room,1
+P101__+1,P101 Entrance Hall,1
+P102__+1,P102 Cleaning Room,1
+P103__+1,P103 Corridor,1
+P104__+1,P104 Elevator,1
+P105__+1,P105 Staircase,1
+P106__+1,P106 Toilets (women),1
+P106.1__+1,P106.1 Toilets (women),1
+P106.2__+1,P106.2 Toilets (accessible),1
+P107__+1,P107 Toilets (men),1
+P107.1__+1,P107.1 Cleaning Room,1
+P107.3__+1,P107.3 Toilets (men),1
+P108__+1,P108 Student-Academic Seminar Room,1
+P109__+1,P109 Preparatory Room,1
+P110__+1,P110 Bar,1
+P111__+1,P111 Corridor,1
+P112__+1,P112 Toilets,1
+P113__+1,P113 Cloak Room,1
+P113.1__+1,P113.1 Washroom,1
+P114__+1,P114 Cloak Room,1
+P114.1__+1,P114.1 Washroom,1
+P115__+1,P115 Cleaning Room,1
+P116__+1,P116 Service Elevator,1
+P117__+1,P117 Storage Room,1
+P118__+1,P118 Elevator,1
+P119__+1,P119 Storage Room,1
+P120__+1,P120 Staircase,1
+P121__+1,P121 Office,1
+P123__+1,P123 Vegetables,1
+P123.1__+1,P123.1 Service Elevator,1
+P124__+1,P124 Dish Washer,1
+P125__+1,P125 Storage Room,1
+P126__+1,P126 Storage Room,1
+P127__+1,P127 Storage Room,1
+Q0120__+1,Q0120 Staircase,1
+Q101__+1,Q101 Corridor,1
+Q102__+1,Q102 Installation Shaft,1
+Q103__+1,Q103 Corridor,1
+Q104__+1,Q104 Office,1
+Q105__+1,Q105 Office,1
+Q106__+1,Q106 Office,1
+Q107__+1,Q107 Office,1
+Q108__+1,Q108 Server Room,1
+Q108.1__+1,Q108.1 Entry,1
+Q109__+1,Q109 Printed Circuit Board Lab,1
+Q110__+1,Q110 Shielded Chamber,1
+Q111__+1,Q111 Extra Space,1
+Q112__+1,Q112 Technical Room,1
+Q113__+1,Q113 LV Substation,1
+Q113.1__+1,Q113.1 Electrical Switchboard,1
+Q114__+1,Q114 Cloak Room,1
+Q115__+1,Q115 Cloak Room,1
+Q116__+1,Q116 Toilets (men),1
+Q116.1__+1,Q116.1 Toilets (men),1
+Q117__+1,Q117 Toilets (women),1
+Q117.1__+1,Q117.1 Toilets (women),1
+Q118__+1,Q118 Staircase,1
+Q119__+1,Q119 Elevator,1
+Q120__+1,Q120 Kitchen,1
+Q121__+1,Q121 Terrace,1
+Q122__+1,Q122 Elevator,1
+Q123__+1,Q123 Corridor,1
+Q124__+1,Q124 Elevator,1
+R101__+1,R101 Corridor,1
+R102__+1,R102 Staircase,1
+R103__+1,R103 Storage Room,1
+R103.1__+1,R103.1 Storage Room,1
+R103.2__+1,R103.2 Toilets,1
+R104__+1,R104 Bar Facilities,1
+R105__+1,R105 Bar,1
+R106__+1,R106 Cyber-Physical Systems Laboratory,1
+R107__+1,R107 Staircase,1
+R108__+1,R108 Staircase,1
+R109__+1,R109 FIT Open Space,1
+R110__+1,R110 FIT ShowRoom,1
+S101__+1,S101 Corridor,1
+S102__+1,S102 Corridor,1
+S103__+1,S103 Office,1
+S103.1__+1,S103.1 Storage Room,1
+S104__+1,S104 Staircase,1
+S105__+1,S105 Toilets (women),1
+S106__+1,S106 Kitchen,1
+S107__+1,S107 Hall,1
+S108__+1,S108 Corridor,1
+S109__+1,S109 Office,1
+S110__+1,S110 Office,1
+S111__+1,S111 Technical Room,1
+S112__+1,S112 Toilets (accessible),1
+S113__+1,S113 Toilets (men),1
+S113.1__+1,S113.1 Toilets (men),1
+S114__+1,S114 Corridor,1
+S115__+1,S115 Staircase,1
+S115.1__+1,S115.1 Cleaning Room,1
+S116__+1,S116 Corridor,1
+S117__+1,S117 Registry,1
+S118__+1,S118 Office,1
+S119__+1,S119 Office,1
+S121__+1,S121 Staircase,1
+S122__+1,S122 Laboratory,1
+S123__+1,S123 Storage Room,1
+extra_30_590__+1,extra_area,1
+extra_486_556__+1,extra_area,1
+extra_486_308__+1,extra_area,1
+extra_528_390__+1,extra_area,1
+extra_450_308__+1,extra_area,1
+A201__+2,A201 Corridor,2
+A202__+2,A202 Ramp,2
+A203__+2,A203 Corridor,2
+A204__+2,A204 Office,2
+A205__+2,A205 Head of Department,2
+A206__+2,A206 Office,2
+A207__+2,A207 Office,2
+A208__+2,A208 Corridor,2
+A211__+2,A211 Laboratory,2
+A212__+2,A212 Office,2
+A213__+2,A213 Elevator,2
+A214__+2,A214 Staircase,2
+A215__+2,A215 Office,2
+A216__+2,A216 Office,2
+A217__+2,A217 Kitchen,2
+A218__+2,A218 Seminar Room,2
+A219__+2,A219 Office,2
+A220__+2,A220 Office,2
+A221__+2,A221 Office,2
+A222__+2,A222 Office,2
+A223__+2,A223 Office,2
+A223.1__+2,A223.1 Laboratory,2
+A224__+2,A224 Toilets (women),2
+A224.1__+2,A224.1 Toilets (men),2
+A224.2__+2,A224.2 Toilets (accessible),2
+A224.3__+2,A224.3 Toilets (men),2
+A225__+2,A225 Corridor,2
+A301__+2,A301 Staircase,2
+__+2,Elevator,2
+__+2,Staircase,2
+C201__+2,C201 Corridor,2
+C202__+2,C202 Corridor,2
+C203__+2,C203 Corridor,2
+C203.1__+2,C203.1 Corridor,2
+C204__+2,C204 Dean's Office,2
+C205__+2,C205 Dean's Secretary,2
+C206__+2,C206 Secretary,2
+C206.1__+2,C206.1 Kitchen,2
+C207__+2,C207 Staircase,2
+C208__+2,C208 Organizational Department of Departments,2
+C209__+2,C209 Conference Room,2
+C209.1__+2,C209.1 Kitchen,2
+C209.2__+2,C209.2 Storage Room,2
+C210__+2,C210 Toilets,2
+C210.1__+2,C210.1 Toilets,2
+C211__+2,C211 Laboratory,2
+C212__+2,C212 Staircase,2
+C213__+2,C213 Technical Room,2
+C214__+2,C214 Copyroom,2
+C215__+2,C215 Office,2
+C216__+2,C216 Office,2
+C217__+2,C217 Cleaning Room,2
+C218__+2,C218 Corridor,2
+C219__+2,C219 Toilets (woman),2
+C219.1__+2,C219.1 Toilets (women),2
+C220__+2,C220 Office,2
+C221__+2,C221 Office,2
+C222__+2,C222 Toilets (men),2
+C222.1__+2,C222.1 Toilets (men),2
+C223__+2,C223 Office,2
+C224__+2,C224 Kitchen,2
+C224.1__+2,C224.1 Kitchen,2
+C225__+2,C225 Day Room,2
+C226__+2,C226 Office,2
+C227__+2,C227 Office,2
+C228__+2,C228 Seminar Room,2
+C229__+2,C229 Office,2
+C230__+2,C230 Staircase,2
+C231__+2,C231 Office,2
+C232__+2,C232 Office,2
+C233__+2,C233 Office,2
+C234__+2,C234 Office,2
+C235__+2,C235 Office,2
+C236__+2,C236 Laboratory,2
+D106__+2,D106 Staircase,2
+D201__+2,D201 Corridor,2
+D202__+2,D202 Corridor,2
+D203__+2,D203 Balcony,2
+D204__+2,D204 Balcony,2
+D205__+2,D205 Corridor,2
+D206__+2,D206 Elevator,2
+F121__+2,F121 Staircase,2
+F200__+2,F200 Staircase,2
+F201__+2,F201 Corridor,2
+F202__+2,F202 Foyer,2
+F203__+2,F203 Economics Department,2
+F204__+2,F204 Office,2
+F205__+2,F205 Corridor,2
+F206__+2,F206 Toilets (men),2
+F207__+2,F207 Toilets (women),2
+F208__+2,F208 Cleaning Room,2
+F209__+2,F209 Staircase,2
+F210__+2,F210 Corridor,2
+F211__+2,F211 Economics Department,2
+F212__+2,F212 Economics Department,2
+F213__+2,F213 Office,2
+F214__+2,F214 Foyer,2
+F215__+2,F215 Head of the Economic Department,2
+F216__+2,F216 Economics Department,2
+F218__+2,F218 Kitchen,2
+F219__+2,F219 Staircase,2
+F220__+2,F220 Registry,2
+F221__+2,F221 Human Resources,2
+F222__+2,F222 Lawyer,2
+F223__+2,F223 Foyer,2
+G106__+2,G106 Staircase,2
+G201__+2,G201 Foyer,2
+G202__+2,G202 Lecture Room 80,2
+G203__+2,G203 Staircase,2
+I105__+2,I105 Staircase,2
+I109__+2,I109 Staircase,2
+I113__+2,I113 Staircase,2
+I117__+2,I117 Staircase,2
+I121__+2,I121 Staircase,2
+I201__+2,I201 Corridor,2
+I202__+2,I202 Hall,2
+I202.1__+2,I202.1 Room,2
+I202.2__+2,I202.2 Bathroom,2
+I203__+2,I203 Corridor,2
+I204__+2,I204 Hall,2
+I204.1__+2,I204.1 Room,2
+I204.2__+2,I204.2 Bathroom,2
+I205__+2,I205 Corridor,2
+I206__+2,I206 Room,2
+I206.1__+2,I206.1 Bathroom,2
+I207__+2,I207 Corridor,2
+I208__+2,I208 Room,2
+I208.1__+2,I208.1 Bathroom,2
+I209__+2,I209 Room,2
+I209.1__+2,I209.1 Bathroom,2
+I210__+2,I210 Corridor,2
+I211__+2,I211 Room,2
+I211.1__+2,I211.1 Bathroom,2
+I212__+2,I212 Room,2
+I212.1__+2,I212.1 Bathroom,2
+I213__+2,I213 Corridor,2
+I214__+2,I214 Room,2
+I214.1__+2,I214.1 Bathroom,2
+I215__+2,I215 Room,2
+I215.1__+2,I215.1 Bathroom,2
+L103.1__+2,L103.1 Staircase,2
+L201__+2,L201 Corridor,2
+L202__+2,L202 Corridor,2
+L203__+2,L203 Office,2
+L204__+2,L204 Office,2
+L205__+2,L205 Office,2
+L206__+2,L206 Office,2
+L207__+2,L207 Office,2
+L208__+2,L208 Fire Escape Staircase,2
+L209__+2,L209 Office,2
+L210__+2,L210 Office,2
+L211__+2,L211 Foyer,2
+L212__+2,L212 Department Secretary of DCGM,2
+L213__+2,L213 Corridor,2
+L214__+2,L214 Staircase,2
+L215__+2,L215 Elevator,2
+L216__+2,L216 Cleaning Room,2
+L217__+2,L217 Corridor,2
+L218__+2,L218 Corridor,2
+L218.1__+2,L218.1 Bridge from the 2nd floor of L to the 3rd Floor of A,2
+L219__+2,L219 Kitchen,2
+L220__+2,L220 Conference Room of DCGM,2
+L221.1__+2,L221.1 Office,2
+L221.2__+2,L221.2 Office,2
+L222__+2,L222 Office,2
+L223__+2,L223 Office,2
+L224__+2,L224 Office,2
+L225__+2,L225 Office,2
+L226__+2,L226 Office,2
+L227__+2,L227 Fire Escape Staircase,2
+L228__+2,L228 Archive,2
+L229__+2,L229 Office,2
+L230.1__+2,L230.1 Office,2
+L230.2__+2,L230.2 Office,2
+L230.3__+2,L230.3 Office,2
+L231__+2,L231 Office,2
+L232__+2,L232 Office,2
+L233__+2,L233 Office,2
+L234__+2,L234 Technical Room,2
+L235__+2,L235 Washroom,2
+L235.1__+2,L235.1 Toilets (men),2
+L235.2__+2,L235.2 Toilets (accessible),2
+L236__+2,L236 Washroom,2
+L236.1__+2,L236.1 Toilets (women),2
+L236.2__+2,L236.2 Toilets (accessible),2
+M107__+2,M107 Staircase,2
+M201__+2,M201 Footbridge,2
+M202__+2,M202 Corridor,2
+M203__+2,M203 Cloak Room,2
+M204__+2,M204 Corridor,2
+M205__+2,M205 Washroom,2
+M205.1__+2,M205.1 Toilets (women),2
+M206__+2,M206 Cleaning Room,2
+M207__+2,M207 Washroom,2
+M207.1__+2,M207.1 Toilets (men),2
+M208__+2,M208 Reception Bathroom,2
+M209__+2,M209 Mini Space,2
+N102__+2,N102 Staircase,2
+N201__+2,N201 Footbridge,2
+N202__+2,N202 Corridor,2
+N203__+2,N203 Computer Laboratory,2
+N204__+2,N204 Computer Laboratory,2
+N205__+2,N205 Computer Laboratory,2
+N207__+2,N207 Distribution Room,2
+N207.1__+2,N207.1 Roof Entrance,2
+N208__+2,N208 Technology Room,2
+O102__+2,O102 Staircase,2
+O201__+2,O201 Footbridge,2
+O202__+2,O202 Corridor,2
+O203__+2,O203 Cisco Laboratory,2
+O204__+2,O204 3D Graphics Laboratory,2
+O205__+2,O205 Network Laboratory,2
+O207__+2,O207 Distribution Room,2
+O208__+2,O208 Technology Room,2
+P201__+2,P201 Hall,2
+P202__+2,P202 Cleaning Room,2
+P203__+2,P203 Technical Room,2
+P204__+2,P204 Elevator,2
+P205__+2,P205 Staircase,2
+P206__+2,P206 Office,2
+P206.1__+2,P206.1 Storage Room,2
+P207.1__+2,P207.1 Toilets (men),2
+P207.2__+2,P207.2 Toilets (men),2
+P207.3__+2,P207.3 Toilets (men),2
+P208.1__+2,P208.1 Toilets (women),2
+P208.2__+2,P208.2 Toilets (women),2
+P208.3__+2,P208.3 Toilets (women),2
+P209__+2,P209 Dining Room,2
+P210__+2,P210 Food Distribution,2
+P210.1__+2,P210.1 Service Elevator,2
+P211__+2,P211 Dishes Store,2
+P211.1__+2,P211.1 Service Elevator,2
+P212__+2,P212 Cold Store,2
+P213__+2,P213 Elevator,2
+P214__+2,P214 Cleaning Room,2
+P215__+2,P215 Staircase,2
+P215.1__+2,P215.1 Cleaning Room,2
+P216__+2,P216 Corridor,2
+P217__+2,P217 Preparatory Room,2
+P219__+2,P219 Toilets (staff),2
+P219.1__+2,P219.1 Toilets (staff),2
+P220__+2,P220 Preparatory Room,2
+Q201__+2,Q201 DCGM Office,2
+Q202__+2,Q202 DCGM Laboratory,2
+Q203__+2,Q203 Laboratory,2
+Q204__+2,Q204 Laboratory,2
+Q205__+2,Q205 Cesnet Laboratory,2
+Q220__+2,Q220 Staircase,2
+Q221__+2,Q221 Corridor,2
+Q222__+2,Q222 RCIT Administration office,2
+Q223__+2,Q223 Sercetary Kitchen,2
+Q224__+2,Q224 Technical Room,2
+Q225__+2,Q225 Balcony,2
+Q226__+2,Q226 Toilets (women),2
+Q226.1__+2,Q226.1 Toilets (women),2
+Q227__+2,Q227 Toilets (men),2
+Q227.1__+2,Q227.1 Toilets (men),2
+Q227.3__+2,Q227.3 Cleaning Room,2
+Q228__+2,Q228 Toilets (accessible),2
+Q229__+2,Q229 Elevator,2
+Q230__+2,Q230 Day Room,2
+Q231__+2,Q231 Corridor,2
+Q232__+2,Q232 Corridor,2
+Q233__+2,Q233 Corridor,2
+Q234__+2,Q234 Elevator,2
+R201__+2,R201 Corridor,2
+R202__+2,R202 Staircase,2
+R203__+2,R203 Cloak Room,2
+R204__+2,R204 Storage Room,2
+R205__+2,R205 Toilets,2
+R206__+2,R206 Bar Facilities,2
+R207__+2,R207 Toilets,2
+R208__+2,R208 Storage Room,2
+R209__+2,R209 Staircase,2
+R210__+2,R210 Staircase,2
+R211__+2,R211 Small Hall,2
+R212__+2,"R212 Student Club ""U Kachničky""",2
+R213__+2,R213 Bar,2
+S201__+2,S201 Staircase,2
+S202__+2,S202 Office,2
+S203__+2,S203 Corridor,2
+S204__+2,S204 corridor,2
+S205__+2,S205 Office,2
+S206__+2,S206 Conference Room,2
+S207__+2,S207 Conference Room,2
+S208__+2,S208 office,2
+S209__+2,S209 Hall,2
+S210__+2,S210 office,2
+S211__+2,S211 Toilets (women),2
+S212__+2,S212 Toilets (men),2
+S213__+2,S213 Staircase,2
+S214__+2,S214 Biometric Systems Lab,2
+S215__+2,S215 conferece room,2
+A209__+3,A209 Corridor,3
+A301__+3,A301 Staircase,3
+A302__+3,A302 Corridor,3
+A303__+3,A303 Office,3
+A304__+3,A304 Office,3
+A305__+3,A305 Office,3
+A306__+3,A306 Office,3
+A307__+3,A307 Office,3
+A308__+3,A308 Office,3
+A309__+3,A309 Technical Room,3
+A310__+3,A310 Toilets (men),3
+A311__+3,A311 Toilets (women),3
+__+3,Elevator,3
+__+3,Staircase,3
+C301__+3,C301 Staircase,3
+C302__+3,C302 Corridor,3
+C303__+3,C303 Corridor,3
+C304__+3,C304 Cisco Laboratory,3
+C305__+3,C305 Office,3
+C306__+3,C306 Office,3
+C307__+3,C307 Office,3
+C308__+3,C308 Corridor,3
+C309__+3,C309 Washroom,3
+C309.1__+3,C309.1 Technical Room,3
+C309.2__+3,C309.2 Toilets,3
+C310__+3,C310 Office,3
+C311__+3,C311 Office,3
+L218.1__+3,L218.1 Bridge from the 2nd floor of L to the 3rd Floor of A,3
+L301__+3,L301 Staircase,3
+L302__+3,L302 Corridor,3
+L303__+3,L303 Corridor,3
+L304__+3,L304 Seminar Room,3
+L305__+3,L305 PC Architecture Laboratory,3
+L306.1__+3,L306.1 Applied Microcontrollers Laboratory,3
+L306.2__+3,L306.2 Applied Microcontrollers Laboratory,3
+L307__+3,L307 Office,3
+L308__+3,L308 Office,3
+L309__+3,L309 Fire Escape Staircase,3
+L310__+3,L310 Office,3
+L311__+3,L311 Reconfigurable Hardware Laboratory,3
+L312__+3,L312 Foyer,3
+L314__+3,L314 Seminar Room,3
+L315__+3,L315 Cloak Room,3
+L316__+3,L316 Elevator,3
+L317__+3,L317 Cleaning Room,3
+L318__+3,L318 Corridor,3
+L319__+3,L319 Office,3
+L320__+3,L320 Kitchen,3
+L321__+3,L321 Conference Room of DCSY,3
+L322__+3,L322 Office,3
+L323__+3,L323 Office,3
+L325__+3,L325 Office,3
+L327__+3,L327 Office,3
+L328__+3,L328 Fire Escape Staircase,3
+L329__+3,L329 Archive,3
+L330__+3,L330 Office,3
+L331__+3,L331 Office,3
+L332__+3,L332 Office,3
+L333__+3,L333 Office,3
+L334__+3,L334 Office,3
+L335__+3,L335 Office,3
+L336__+3,L336 Office,3
+L337__+3,L337 Office,3
+L338__+3,L338 Office,3
+L339__+3,L339 Office,3
+L340__+3,L340 Technical Room,3
+L341__+3,L341 Washroom,3
+L341.1__+3,L341.1 Toilets (men),3
+L341.2__+3,L341.2 Toilets (accessible),3
+L342__+3,L342 Washroom,3
+L342.1__+3,L342.1 Toilets (women),3
+L342.2__+3,L342.2 Toilets (accessible),3
+P205__+3,P205 Staircase,3
+P301__+3,P301 Corridor,3
+P302__+3,P302 Distribution Room,3
+P303__+3,P303 Elevator,3
+P304__+3,P304 Staircase,3
+P305__+3,P305 Corridor,3
+P306__+3,P306 Kitchen,3
+P307__+3,P307 Entry,3
+P307.1__+3,P307.1 Room,3
+P307.2__+3,P307.2 Room,3
+P307.3__+3,P307.3 Bathroom,3
+P308__+3,P308 Entry,3
+P308.1__+3,P308.1 Room,3
+P308.2__+3,P308.2 Room,3
+P308.3__+3,P308.3 Bathroom,3
+P309__+3,P309 Entry,3
+P309.1__+3,P309.1 Room,3
+P309.2__+3,P309.2 Room,3
+P309.3__+3,P309.3 Bathroom,3
+P310__+3,P310 Entry,3
+P310.1__+3,P310.1 Room,3
+P310.2__+3,P310.2 Room,3
+P310.3__+3,P310.3 Bathroom,3
+P311__+3,P311 Entry,3
+P311.1__+3,P311.1 Room,3
+P311.2__+3,P311.2 Room,3
+P311.3__+3,P311.3 Bathroom,3
+P312__+3,P312 Entry,3
+P312.1__+3,P312.1 Room,3
+P312.2__+3,P312.2 Room,3
+P312.3__+3,P312.3 Bathroom,3
+P313__+3,P313 Staircase,3
+P314__+3,P314 Air Conditioning,3
+P315__+3,P315 Entry,3
+P315.1__+3,P315.1 Room,3
+P315.2__+3,P315.2 Room,3
+P315.3__+3,P315.3 Bathroom,3
+P315.4__+3,P315.4 kitchen,3
+P316__+3,P316 Entry,3
+P316.1__+3,P316.1 Room,3
+P316.2__+3,P316.2 Room,3
+P316.3__+3,P316.3 Bathroom,3
+P316.4__+3,P316.4 Kitchen,3
+P317__+3,P317 Entry,3
+P317.1__+3,P317.1 Room,3
+P317.2__+3,P317.2 Room,3
+P317.3__+3,P317.3 Bathroom,3
+P317.4__+3,P317.4 Kitchen,3
+P318__+3,P318 Entry,3
+P318.1__+3,P318.1 Room,3
+P318.2__+3,P318.2 Room,3
+P318.3__+3,P318.3 Bathroom,3
+P318.4__+3,P318.4 Kitchen,3
+P319__+3,P319 Entry,3
+P319.1__+3,P319.1 Room,3
+P319.2__+3,P319.2 Bathroom,3
+Q301__+3,Q301 Laboratory,3
+Q302__+3,Q302 CZ.NIC Laboratory,3
+Q303__+3,Q303 CZ.NIC Laboratory,3
+Q304__+3,Q304 RedHat,3
+Q305__+3,Q305 DynaNIC,3
+Q320__+3,Q320 Staircase,3
+Q321__+3,Q321 Corridor,3
+Q322__+3,Q322 Conference Room,3
+Q323__+3,Q323 Technical Room,3
+Q324__+3,Q324 Technical Room,3
+Q325__+3,Q325 Corridor,3
+Q326__+3,Q326 Staircase,3
+Q327__+3,Q327 Toilets (women),3
+Q327.1__+3,Q327.1 Toilets (women),3
+Q328__+3,Q328 Toilets (men),3
+Q328.1__+3,Q328.1 Toilets (men),3
+Q328.2__+3,Q328.2 Cleaning Room,3
+Q329__+3,Q329 Toilets (accessible),3
+Q330__+3,Q330 Elevator,3
+Q331__+3,Q331 Day Room,3
+R209__+3,R209 Staircase,3
+R210__+3,R210 Staircase,3
+R301__+3,R301 Staircase,3
+R302__+3,R302 Air Conditioning,3
+R303__+3,R303 Small Hall Gallery,3
+R304__+3,R304 Office,3
+R305__+3,R305 Corridor,3
+R306__+3,R306 Entry,3
+R306.1__+3,R306.1 Room,3
+R306.2__+3,R306.2 Bathroom,3
+R307__+3,R307 Staircase,3
+R308__+3,R308 Entry,3
+R308.1__+3,R308.1 Room,3
+R308.2__+3,R308.2 Room,3
+R308.3__+3,R308.3 Bathroom,3
+R309__+3,R309 Entry,3
+R309.1__+3,R309.1 Room,3
+R309.2__+3,R309.2 Room,3
+R309.3__+3,R309.3 Bathroom,3
+R310__+3,R310 Technical Room,3
+R311__+3,R311 Entry,3
+R311.1__+3,R311.1 Room,3
+R311.2__+3,R311.2 Bathroom,3
+R312__+3,R312 Cleaning Room,3
+S301__+3,S301 Staircase,3
+S302__+3,S302 Engine Room,3
