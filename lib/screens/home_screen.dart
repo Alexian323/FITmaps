@@ -52,6 +52,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   
   // Destination room (room clicked/selected for navigation - markers only show for this)
   Map<String, dynamic>? _destinationRoom;
+  
+  // Navigation instructions
+  List<String> _navigationInstructions = [];
+  bool _showNavigationInstructions = false;
+  bool _navigationInstructionsExpanded = false;
 
   @override
   void initState() {
@@ -594,56 +599,56 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final startRoom = _currentLocationRoom!;
       final endRoom = destinationRoom;
       
-      // Check if rooms are on the same floor
-      final startFloor = startRoom['floor_no']?.toString();
-      final endFloor = endRoom['floor_no']?.toString();
+      // Use the new navigation system with instructions
+      final navigationResult = PathUtils.generatePathWithInstructions(
+        startRoom,
+        endRoom,
+        _allRoomsData,
+      );
       
-      if (startFloor == endFloor) {
-        // Same floor - use corridor-aware routing
-        final pathPoints = PathUtils.generatePathThroughCorridors(
-          startRoom,
-          endRoom,
-          _allRoomsData,
-        );
-        print('Path points generated: ${pathPoints.length} points');
-        if (pathPoints.isNotEmpty) {
-          print('First point: (${pathPoints.first.dx}, ${pathPoints.first.dy})');
-          print('Last point: (${pathPoints.last.dx}, ${pathPoints.last.dy})');
-        }
-        setState(() {
-          _navigationPaths = [
-            MapPath.navigation(points: pathPoints),
-          ];
-        });
-        print('Navigation path created from ${startRoom['id']} to ${endRoom['id']} through corridors');
-        print('Navigation paths count: ${_navigationPaths.length}');
+      print('Path points generated: ${navigationResult.path.length} points');
+      if (navigationResult.path.isNotEmpty) {
+        print('First point: (${navigationResult.path.first.dx}, ${navigationResult.path.first.dy})');
+        print('Last point: (${navigationResult.path.last.dx}, ${navigationResult.path.last.dy})');
+      }
+      
+      setState(() {
+        _navigationPaths = [
+          MapPath.navigation(points: navigationResult.path),
+        ];
+        _navigationInstructions = navigationResult.instructions;
+        _showNavigationInstructions = navigationResult.instructions.isNotEmpty;
+      });
+      
+      print('Navigation path created from ${startRoom['id']} to ${endRoom['id']}');
+      print('Navigation instructions: ${navigationResult.instructions.length} steps');
+      
+      // If multi-level, switch to start floor first to show path to staircase/lift
+      if (navigationResult.isMultiLevel) {
+        final startFloor = startRoom['floor_no']?.toString();
+        _switchToFloor(startFloor);
       } else {
-        // Different floors - switch to destination floor and draw path
+        // Same floor - switch to destination floor
+        final endFloor = endRoom['floor_no']?.toString();
         _switchToFloor(endFloor);
-        // Wait for floor switch to complete, then draw path
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          final pathPoints = PathUtils.generatePathThroughCorridors(
-            startRoom,
-            endRoom,
-            _allRoomsData,
-          );
-          setState(() {
-            _navigationPaths = [
-              MapPath.navigation(points: pathPoints),
-            ];
-          });
-          print('Navigation path created from ${startRoom['id']} to ${endRoom['id']} (cross-floor)');
-        });
       }
       
       // Zoom to show both rooms and path
-      _zoomToRooms([startRoom, endRoom]);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _zoomToRooms([startRoom, endRoom]);
+      });
     }
   }
 
   /// Clear navigation path
   void _clearNavigation() {
     clearNavigationPaths();
+    setState(() {
+      _navigationInstructions = [];
+      _showNavigationInstructions = false;
+      _navigationInstructionsExpanded = false;
+      _destinationRoom = null;
+    });
     print('Navigation path cleared');
   }
 
@@ -732,6 +737,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     return InkWell(
       onTap: () {
+        // Dismiss keyboard when room is selected
+        FocusScope.of(context).unfocus();
+        
         _searchController.text = roomId;
         setState(() {
           _showSuggestions = false;
@@ -1141,6 +1149,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _onMarkerClicked(Map<String, dynamic> room) {
+    // Dismiss keyboard when room is clicked
+    FocusScope.of(context).unfocus();
+    
     setState(() {
       _selectedRoom = room;
       _destinationRoom = room; // Set as destination for navigation
@@ -1244,21 +1255,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       } else {
         // Mobile/Desktop platform - can use custom headers
         print('Making request from mobile/desktop platform...');
+        print('Requesting URL: $cleanUrl');
         final client = io_http.IOClient();
         try {
           response = await client.get(
             uri,
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/109.0 Firefox/109.0',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.9',
             },
           ).timeout(
-            Duration(seconds: 20),
+            Duration(seconds: 30), // Increased timeout for mobile networks
             onTimeout: () {
-              print('Request timeout');
-              throw TimeoutException('Request timed out after 20 seconds');
+              print('Request timeout after 30 seconds');
+              throw TimeoutException('Request timed out after 30 seconds');
             },
           );
+          print('Response status: ${response.statusCode}');
+        } catch (e) {
+          print('Error making HTTP request: $e');
+          rethrow;
         } finally {
           client.close();
         }
@@ -1734,6 +1751,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           // Search overlay
           _buildSearchOverlay(),
 
+          // Navigation instructions panel
+          if (_showNavigationInstructions && _navigationInstructions.isNotEmpty)
+            _buildNavigationInstructionsPanel(),
+
           // Bottom navigation
           _buildBottomNavigationBar(),
 
@@ -1883,6 +1904,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   height: 45,
                   child: TextFormField(
                     controller: _searchController,
+                    autofocus: false,
                     decoration: InputDecoration(
                       hintText: 'Type room name or ID to search...',
                       border: InputBorder.none,
@@ -1915,6 +1937,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       _performSearch(value); // Also perform search as user types
                     },
                     onTap: () {
+                      // Ensure keyboard appears when search input is tapped
                       setState(() {
                         _showSuggestions = _searchController.text.isNotEmpty;
                       });
@@ -2057,23 +2080,199 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildNavigationInstructionsPanel() {
+    // Show only first instruction in the bubble, or all when expanded
+    final primaryInstruction = _navigationInstructions.isNotEmpty 
+        ? _navigationInstructions.first 
+        : '';
+    final hasMoreInstructions = _navigationInstructions.length > 1;
+    
+    return Positioned(
+      bottom: 70, // Above smaller bottom navigation bar
+      right: 12, // Positioned on the right side
+      child: GestureDetector(
+        onTap: () {
+          // Expand to show all instructions in a larger bubble
+          if (hasMoreInstructions) {
+            setState(() {
+              _navigationInstructionsExpanded = !_navigationInstructionsExpanded;
+            });
+          }
+        },
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: _navigationInstructionsExpanded ? 260 : 180,
+            maxHeight: _navigationInstructionsExpanded 
+                ? MediaQuery.of(context).size.height * 0.25 
+                : double.infinity,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 8,
+                offset: Offset(0, 2),
+                spreadRadius: 0,
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              // Thought bubble tail (pointing down-right) - Google Maps style
+              Positioned(
+                bottom: -6,
+                right: 16,
+                child: CustomPaint(
+                  size: Size(16, 12),
+                  painter: _BubbleTailPainter(),
+                ),
+              ),
+              // Content - Compact Google Maps style
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Compact header row
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Icon(
+                            Icons.directions,
+                            color: AppTheme.primaryColor,
+                            size: 14,
+                          ),
+                        ),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Navigation',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _showNavigationInstructions = false;
+                              _navigationInstructionsExpanded = false;
+                            });
+                          },
+                          child: Container(
+                            padding: EdgeInsets.all(2),
+                            child: Icon(
+                              Icons.close,
+                              size: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 6),
+                    // Instructions - Compact style
+                    if (_navigationInstructionsExpanded)
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: _navigationInstructions.map((instruction) {
+                              return Padding(
+                                padding: EdgeInsets.only(bottom: 4),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: 4,
+                                      height: 4,
+                                      margin: EdgeInsets.only(top: 3, right: 6),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primaryColor,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        instruction,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.black87,
+                                          height: 1.3,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      )
+                    else
+                      Text(
+                        primaryInstruction,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.black87,
+                          height: 1.3,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    // Hint to tap for more
+                    if (!_navigationInstructionsExpanded && hasMoreInstructions)
+                      Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Tap to expand',
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: AppTheme.primaryColor,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildBottomNavigationBar() {
     return Positioned(
       bottom: 0,
       left: 0,
       right: 0,
       child: Container(
+        height: 56, // Reduced height - Google Maps style compact menu
         decoration: BoxDecoration(
           color: Colors.white,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 10,
-              offset: Offset(0, -5),
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 8,
+              offset: Offset(0, -2),
             ),
           ],
         ),
         child: SafeArea(
+          top: false, // Don't add top padding
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
@@ -2099,22 +2298,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        padding: EdgeInsets.symmetric(vertical: 4, horizontal: 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               icon,
               color: isSelected ? AppTheme.primaryColor : Colors.grey[600],
-              size: 24,
+              size: 20, // Reduced icon size
             ),
-            SizedBox(height: 4),
+            SizedBox(height: 2), // Reduced spacing
             Text(
               label,
               style: TextStyle(
                 color: isSelected ? AppTheme.primaryColor : Colors.grey[600],
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 10, // Reduced font size
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               ),
             ),
           ],
@@ -3552,4 +3751,38 @@ class BuildingMapPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(CustomPainter oldDelegate) => true;
+}
+
+/// Custom painter for thought bubble tail - Google Maps style
+class _BubbleTailPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    // Draw a small curved tail pointing down-right (Google Maps style)
+    path.moveTo(size.width * 0.3, 0);
+    path.quadraticBezierTo(
+      size.width * 0.5, size.height * 0.3,
+      size.width * 0.7, size.height * 0.6,
+    );
+    path.lineTo(size.width, size.height);
+    path.lineTo(size.width * 0.5, size.height);
+    path.close();
+
+    canvas.drawPath(path, paint);
+
+    // Add subtle shadow
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.08)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, 1.5)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawPath(path, shadowPaint);
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }

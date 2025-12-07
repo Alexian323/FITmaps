@@ -22,6 +22,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
@@ -31,4 +32,19 @@ flutter:
     - assets/floors/
     - data/parsed_data/
     - data/raw_htmls/
+
+flutter_launcher_icons:
+  android: true
+  web:
+    generate: true
+    image_path: "assets/images/ic_launcher.png"
+    background_color: "#ffffff"
+    theme_color: "#0175C2"
+  windows:
+    generate: true
+    image_path: "assets/images/ic_launcher.png"
+    icon_size: 48
+  image_path: "assets/images/ic_launcher.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/images/ic_launcher.png"
 
