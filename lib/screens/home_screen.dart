@@ -284,9 +284,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         'Map bounds: X(${_mapMinX.toStringAsFixed(1)} - ${_mapMaxX.toStringAsFixed(1)}), Y(${_mapMinY.toStringAsFixed(1)} - ${_mapMaxY.toStringAsFixed(1)})');
   }
 
-  /// Extract lecturer names from room title
-  /// Format: "RoomID Office\nLecturer1 Name, Title\nLecturer2 Name, Title"
-  /// Handles various formats: "FirstName LastName, Title, Ph.D. +phone"
   List<String> _extractLecturerNames(String title) {
     final lecturerNames = <String>{};
 
@@ -361,7 +358,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return lecturerNames.toList();
   }
 
-  /// Build title with highlighted lecturer name
   Widget _buildHighlightedTitle(
       String title, String? highlightedLecturer, String query) {
     if (highlightedLecturer != null && query.isNotEmpty) {
@@ -425,7 +421,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  /// Check if a room matches the search query (by room ID, title, or lecturer names)
   bool _roomMatchesQuery(Map<String, dynamic> room, String query) {
     if (query.isEmpty) return false;
 
@@ -562,19 +557,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  /// Set navigation path between two rooms
-  ///
-  /// Example usage:
-  /// ```dart
-  /// final startRoom = getRoomById('D006');
-  /// final endRoom = getRoomById('D0201');
-  /// if (startRoom != null && endRoom != null) {
-  ///   setNavigationPath(startRoom, endRoom);
-  /// }
-  /// ```
   void setNavigationPath(
       Map<String, dynamic> startRoom, Map<String, dynamic> endRoom) {
-    // Use corridor-aware routing for better paths
     final pathPoints = PathUtils.generatePathThroughCorridors(
       startRoom,
       endRoom,
@@ -587,7 +571,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
   }
 
-  /// Set navigation path with waypoints
   void setNavigationPathWithWaypoints(
     Map<String, dynamic> startRoom,
     List<Map<String, dynamic>> waypoints,
@@ -602,26 +585,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
   }
 
-  /// Clear all navigation paths
   void clearNavigationPaths() {
     setState(() {
       _navigationPaths = [];
     });
   }
 
-  /// Update user trail with a new position (for GPS tracking)
   void updateUserTrail(Offset position) {
     _userTrail.addPosition(position);
-    setState(() {}); // Trigger repaint
+    setState(() {});
   }
 
-  /// Clear user trail
   void clearUserTrail() {
     _userTrail.clear();
     setState(() {});
   }
 
-  /// Get room by ID from all rooms data
   Map<String, dynamic>? getRoomById(String roomId) {
     try {
       return _allRoomsData.firstWhere((room) => room['id'] == roomId);
@@ -630,7 +609,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  /// Set the current location room (for testing)
   void _setCurrentLocation(String roomId) {
     final room = getRoomById(roomId);
     if (room != null) {
@@ -654,9 +632,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  /// Navigate to a destination room from current location
   void _navigateToRoom(Map<String, dynamic> destinationRoom) {
-    // Set destination room (this will show the marker)
     setState(() {
       _destinationRoom = destinationRoom;
     });
@@ -783,15 +759,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  /// Convert graph path (list of node IDs) to pixel coordinates
   List<Offset> _convertGraphPathToCoordinates(List<String> graphPath) {
     final pathPoints = <Offset>[];
 
     for (final nodeId in graphPath) {
-      // Find room by ID with floor format
       Map<String, dynamic>? room;
-
-      // Try to find by id_with_floor first (if available)
       try {
         final parts = nodeId.split('__');
         final roomIdPart = parts[0];
@@ -815,7 +787,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
       final coords = room['coords'] as List<dynamic>? ?? [];
       if (coords.isEmpty) {
-        // If no pixel coords, try GPS coords (would need conversion, but skip for now)
         print('Warning: Room ${room['id']} has no pixel coordinates');
         continue;
       }
@@ -829,7 +800,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return pathPoints;
   }
 
-  /// Generate navigation instructions from graph path
   List<String> _generateInstructionsFromGraphPath(
     List<String> path,
     double estimatedTimeMinutes,
@@ -839,13 +809,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     if (path.isEmpty) return instructions;
 
-    // Add header with ETX
     final distanceMeters = (totalDistance * 20000).toStringAsFixed(0);
     instructions.add(
         '📍 Route found: ${path.length - 1} steps (~${estimatedTimeMinutes.toStringAsFixed(1)} min, ~$distanceMeters m)');
     instructions.add('');
 
-    // Track floor changes
     String? currentFloor;
     String? previousFloor;
 
@@ -855,7 +823,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final roomId = parts[0];
       final floor = parts.length > 1 ? parts[1] : '';
 
-      // Find room info
       Map<String, dynamic>? room;
       try {
         room = _allRoomsData.firstWhere(
@@ -874,7 +841,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final title = room['title']?.toString() ?? roomId;
       currentFloor = room['floor_no']?.toString() ?? floor;
 
-      // Check for floor change
       if (previousFloor != null && currentFloor != previousFloor) {
         final floorChange = int.tryParse(currentFloor) ?? 0;
         final prevFloorNum = int.tryParse(previousFloor) ?? 0;
@@ -888,7 +854,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         instructions.add('');
       }
 
-      // Add step instruction
       if (i == 0) {
         instructions.add('🚶 Start at $title');
       } else if (i == path.length - 1) {
@@ -914,7 +879,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return instructions;
   }
 
-  /// Clear navigation path
   void _clearNavigation() {
     clearNavigationPaths();
     setState(() {
@@ -1695,9 +1659,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  /// Extract room photo URLs from the FIT website HTML
-  /// Photos are found after <h3>Photo</h3> tag
-  /// Extracts all <img> tags that appear after the Photo heading
   Future<List<String>> _extractRoomPhotos(String roomUrl) async {
     try {
       // Clean the URL - remove any trailing spaces or issues
@@ -3026,26 +2987,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           children: [
             ListTile(
               leading: Icon(Icons.info_outline),
-              title: Text('About'),
+              title: Text('Participants'),
               onTap: () {
                 Navigator.pop(context);
                 _showAboutDialog();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.help_outline),
-              title: Text('Help & Support'),
-              onTap: () {
-                Navigator.pop(context);
-                _showHelpDialog();
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.logout, color: Colors.red),
-              title: Text('Logout', style: TextStyle(color: Colors.red)),
-              onTap: () {
-                Navigator.pop(context);
-                _handleLogout();
               },
             ),
           ],
@@ -3058,18 +3003,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('About FITMaps'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('FIT Faculty Navigation App'),
-            SizedBox(height: 8),
-            Text('Version 1.0.0'),
-            SizedBox(height: 8),
-            Text(
-                'Navigate the FIT building with ease using interactive maps and search functionality.'),
-          ],
+        title: Text('Participants'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('BUT Class 2025 TAM (xotiena00, xudupas00, xlpanca01, xmorneq00, xwoelfi00)'),
+              SizedBox(height: 16),
+              Text(
+                'Credits: Prof. Adam Herout',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -3078,41 +3027,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
         ],
       ),
-    );
-  }
-
-  void _showHelpDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Help & Support'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('How to use FITMaps:'),
-            SizedBox(height: 8),
-            Text('• Use the search bar to find rooms, offices, or facilities'),
-            Text('• Select different floors using the dropdown'),
-            Text('• Tap on the map to explore different areas'),
-            Text('• Use the bottom navigation to access profile and menu'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Got it'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _handleLogout() {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => SplashScreen()),
-      (route) => false,
     );
   }
 
@@ -4099,7 +4013,6 @@ class BuildingMapPainter extends CustomPainter {
     );
   }
 
-  /// Draw current location marker (green pin)
   void _drawCurrentLocationMarker(
       Canvas canvas, List<dynamic> coords, Size canvasSize) {
     if (coords.isEmpty) return;
@@ -4202,7 +4115,6 @@ class BuildingMapPainter extends CustomPainter {
     );
   }
 
-  /// Draw a path on the map with right-angled corners (Google Maps style)
   void _drawPath(Canvas canvas, MapPath path, Size canvasSize) {
     if (path.points.length < 2) {
       print('Path has less than 2 points: ${path.points.length}');
@@ -4261,7 +4173,6 @@ class BuildingMapPainter extends CustomPainter {
     // Arrows removed per user request
   }
 
-  /// Convert a path with potential diagonals to a strictly right-angled path
   List<Offset> _convertToRightAngledPath(List<Offset> points) {
     if (points.length < 2) return points;
 
@@ -4297,7 +4208,6 @@ class BuildingMapPainter extends CustomPainter {
     return rightAngledPoints;
   }
 
-  /// Draw a dashed path with right angles
   void _drawDashedPathRightAngled(
       Canvas canvas, List<Offset> points, Paint paint) {
     const double dashLength = 10.0;
@@ -4331,7 +4241,6 @@ class BuildingMapPainter extends CustomPainter {
     }
   }
 
-  /// Draw a dotted path with right angles
   void _drawDottedPathRightAngled(
       Canvas canvas, List<Offset> points, Paint paint) {
     const double dotSpacing = 8.0;
@@ -4364,7 +4273,6 @@ class BuildingMapPainter extends CustomPainter {
     }
   }
 
-  /// Helper to draw dashed line between two points
   void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint,
       double dashLength, double gapLength) {
     final distance = math
@@ -4391,7 +4299,6 @@ class BuildingMapPainter extends CustomPainter {
     }
   }
 
-  /// Helper to draw dotted line between two points
   void _drawDottedLine(
       Canvas canvas, Offset start, Offset end, Paint paint, double dotSpacing) {
     final distance = math
@@ -4412,7 +4319,6 @@ class BuildingMapPainter extends CustomPainter {
     }
   }
 
-  /// Draw direction arrows along a path
   void _drawPathArrows(
       Canvas canvas, List<Offset> points, Color color, double pathWidth) {
     final arrowPaint = Paint()
@@ -4445,7 +4351,6 @@ class BuildingMapPainter extends CustomPainter {
     }
   }
 
-  /// Draw a single arrow at a position with a given angle
   void _drawArrow(
       Canvas canvas, Offset position, double angle, double size, Paint paint) {
     final path = Path();

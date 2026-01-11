@@ -1,36 +1,18 @@
-/// Path drawing utilities for FITmaps
-///
-/// This file contains classes and utilities for drawing paths on the floor plan.
-/// Paths can represent navigation routes, user movement trails, or highlighted corridors.
-
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
-/// Style options for path drawing
 enum PathStyle {
   solid,
   dashed,
   dotted,
 }
 
-/// Represents a path to be drawn on the map
 class MapPath {
-  /// Path coordinates in pixel space (same coordinate system as room coords)
   final List<Offset> points;
-
-  /// Path color
   final Color color;
-
-  /// Path width in pixels
   final double width;
-
-  /// Path drawing style
   final PathStyle style;
-
-  /// Whether to show direction arrows along the path
   final bool showArrows;
-
-  /// Optional path identifier
   final String? id;
 
   const MapPath({
@@ -42,23 +24,20 @@ class MapPath {
     this.id,
   });
 
-  /// Create a navigation path (bright cyan/teal, distinct color for visibility)
   factory MapPath.navigation({
     required List<Offset> points,
     String? id,
   }) {
     return MapPath(
       points: points,
-      color: const Color(
-          0xFF00CED1), // Dark turquoise/cyan - distinct, professional, and eye-catching
-      width: 8.0, // Increased from 6.0 for better visibility
+      color: const Color(0xFF00CED1),
+      width: 8.0,
       style: PathStyle.solid,
-      showArrows: false, // Arrows disabled per user request
+      showArrows: false,
       id: id,
     );
   }
 
-  /// Create a user trail path (faded, no arrows)
   factory MapPath.trail({
     required List<Offset> points,
     String? id,
@@ -73,7 +52,6 @@ class MapPath {
     );
   }
 
-  /// Create a highlighted corridor path
   factory MapPath.corridor({
     required List<Offset> points,
     String? id,
@@ -89,41 +67,34 @@ class MapPath {
   }
 }
 
-/// Manages user movement trail
 class UserTrail {
   final List<Offset> _positions = [];
   final int maxLength;
 
   UserTrail({this.maxLength = 100});
 
-  /// Add a new position to the trail
   void addPosition(Offset position) {
     _positions.add(position);
     if (_positions.length > maxLength) {
-      _positions.removeAt(0); // Remove oldest position
+      _positions.removeAt(0);
     }
   }
 
-  /// Clear all trail positions
   void clear() {
     _positions.clear();
   }
 
-  /// Get current trail as a MapPath
   MapPath toMapPath() {
     return MapPath.trail(
       points: List.from(_positions),
     );
   }
 
-  /// Get number of positions in trail
   int get length => _positions.length;
 
-  /// Check if trail is empty
   bool get isEmpty => _positions.isEmpty;
 }
 
-/// Navigation result containing path and instructions
 class NavigationResult {
   final List<Offset> path;
   final List<String> instructions;
@@ -140,9 +111,7 @@ class NavigationResult {
   });
 }
 
-/// Utility functions for path generation
 class PathUtils {
-  /// Get the center point of a room from its coordinates
   static Offset getRoomCenter(List<dynamic> coords) {
     if (coords.isEmpty) return Offset.zero;
 
@@ -161,8 +130,7 @@ class PathUtils {
     return Offset(centerX / count, centerY / count);
   }
 
-  /// Generate a simple straight-line path between two room centers
-  /// This is a fallback method - use generatePathThroughCorridors for better routing
+  // Fallback method - use generatePathThroughCorridors for better routing
   static List<Offset> generatePathBetweenRooms(
     Map<String, dynamic> startRoom,
     Map<String, dynamic> endRoom,
@@ -176,9 +144,7 @@ class PathUtils {
     return [startCenter, endCenter];
   }
 
-  /// Generate a path that routes through corridors using Manhattan distance
-  /// (only horizontal/vertical movements, right-angle corners, no diagonals)
-  /// The path will stay within corridors when possible and avoid going through rooms
+  // Routes through corridors using Manhattan distance (horizontal/vertical only)
   static List<Offset> generatePathThroughCorridors(
     Map<String, dynamic> startRoom,
     Map<String, dynamic> endRoom,
@@ -188,7 +154,6 @@ class PathUtils {
     return result.path;
   }
 
-  /// Generate path with navigation instructions and multi-level support
   static NavigationResult generatePathWithInstructions(
     Map<String, dynamic> startRoom,
     Map<String, dynamic> endRoom,
@@ -265,7 +230,6 @@ class PathUtils {
     );
   }
 
-  /// Generate multi-level navigation path with staircase/lift guidance
   static NavigationResult _generateMultiLevelPath(
     Map<String, dynamic> startRoom,
     Map<String, dynamic> endRoom,
@@ -381,7 +345,6 @@ class PathUtils {
     );
   }
 
-  /// Find a path through corridors, avoiding rooms and staying within corridor boundaries
   static List<Offset> _findPathThroughCorridorsAvoidingRooms(
     Offset start,
     Offset end,
@@ -451,7 +414,6 @@ class PathUtils {
     );
   }
 
-  /// Check if a line segment intersects with or goes through a room polygon
   static bool _segmentIntersectsRoom(
       Offset p1, Offset p2, List<dynamic> roomCoords) {
     if (roomCoords.length < 3) return false;
@@ -491,7 +453,6 @@ class PathUtils {
     return false;
   }
 
-  /// Check if two line segments intersect
   static bool _segmentsIntersect(Offset p1, Offset p2, Offset p3, Offset p4) {
     final d1 =
         (p4.dx - p3.dx) * (p1.dy - p3.dy) - (p4.dy - p3.dy) * (p1.dx - p3.dx);
@@ -506,7 +467,6 @@ class PathUtils {
         ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
   }
 
-  /// Generate a safe path that avoids rooms by routing around them
   static List<Offset> _generateSafePathAvoidingRooms(
     Offset start,
     Offset end,
@@ -633,7 +593,6 @@ class PathUtils {
     return _removeDuplicatePoints(path);
   }
 
-  /// Find a path through corridors, staying within corridor boundaries when possible
   static List<Offset> _findPathThroughCorridors(
     Offset start,
     Offset end,
@@ -816,51 +775,33 @@ class PathUtils {
       }
     }
 
-    return intersections % 2 ==
-        1; // Odd number of intersections means point is inside
+    return intersections % 2 == 1;
   }
 
-  /// Generate a Manhattan path (only horizontal/vertical movements, right-angle corners)
-  /// This ensures strictly right-angled paths with no diagonals
   static List<Offset> _generateManhattanPath(Offset start, Offset end) {
     final path = <Offset>[start];
-
-    // Manhattan distance: move horizontally first, then vertically (or vice versa)
-    // Strategy: move in the direction with larger difference first
-
     final dx = end.dx - start.dx;
     final dy = end.dy - start.dy;
 
-    // If both movements are needed, create right angle
     if (dx.abs() > 0.1 && dy.abs() > 0.1) {
-      // Determine which direction to move first based on larger distance
       if (dx.abs() > dy.abs()) {
-        // Move horizontally first, then vertically
-        path.add(Offset(end.dx, start.dy)); // Horizontal move
-        path.add(end); // Vertical move
+        path.add(Offset(end.dx, start.dy));
+        path.add(end);
       } else {
-        // Move vertically first, then horizontally
-        path.add(Offset(start.dx, end.dy)); // Vertical move
-        path.add(end); // Horizontal move
+        path.add(Offset(start.dx, end.dy));
+        path.add(end);
       }
-    } else if (dx.abs() > 0.1) {
-      // Only horizontal movement
-      path.add(end);
-    } else if (dy.abs() > 0.1) {
-      // Only vertical movement
+    } else if (dx.abs() > 0.1 || dy.abs() > 0.1) {
       path.add(end);
     }
-    // If both are zero or very small, just return start point
 
     return path;
   }
 
-  /// Calculate Manhattan distance (sum of horizontal and vertical distances)
   static double _manhattanDistance(Offset a, Offset b) {
     return (a.dx - b.dx).abs() + (a.dy - b.dy).abs();
   }
 
-  /// Remove duplicate consecutive points from path
   static List<Offset> _removeDuplicatePoints(List<Offset> path) {
     if (path.length <= 1) return path;
 
@@ -869,7 +810,6 @@ class PathUtils {
       final current = path[i];
       final last = cleaned.last;
 
-      // Only add if point is different (with small threshold for floating point)
       if ((current.dx - last.dx).abs() > 0.1 ||
           (current.dy - last.dy).abs() > 0.1) {
         cleaned.add(current);
@@ -879,7 +819,6 @@ class PathUtils {
     return cleaned;
   }
 
-  /// Find the closest point on a room's perimeter to a given point
   static Offset _findClosestPointOnRoom(
       Offset point, List<dynamic> roomCoords) {
     if (roomCoords.isEmpty) return point;
@@ -887,8 +826,7 @@ class PathUtils {
     double minDistance = double.infinity;
     Offset closestPoint = point;
 
-    // Check each edge of the room
-    for (int i = 0; i < roomCoords.length; i++) {
+      for (int i = 0; i < roomCoords.length; i++) {
       final coord1 = roomCoords[i] as List<dynamic>;
       final coord2 = roomCoords[(i + 1) % roomCoords.length] as List<dynamic>;
 
@@ -902,7 +840,6 @@ class PathUtils {
           (coord2[1] as num).toDouble(),
         );
 
-        // Find closest point on line segment
         final closestOnEdge = _closestPointOnLineSegment(point, p1, p2);
         final dist = distance(point, closestOnEdge);
 
@@ -916,7 +853,6 @@ class PathUtils {
     return closestPoint;
   }
 
-  /// Find the closest point on a line segment to a given point
   static Offset _closestPointOnLineSegment(
       Offset point, Offset lineStart, Offset lineEnd) {
     final line = lineEnd - lineStart;
@@ -935,7 +871,6 @@ class PathUtils {
     );
   }
 
-  /// Generate a path through multiple waypoint rooms
   static List<Offset> generatePathThroughWaypoints(
     Map<String, dynamic> startRoom,
     List<Map<String, dynamic>> waypointRooms,
@@ -960,7 +895,6 @@ class PathUtils {
     return path;
   }
 
-  /// Create a curved path using quadratic Bezier curves
   static Path createCurvedPath(List<Offset> points) {
     final path = Path();
     if (points.isEmpty) return path;
@@ -971,7 +905,6 @@ class PathUtils {
       final current = points[i];
       final next = points[i + 1];
 
-      // Use midpoint as control point for smooth curve
       final controlPoint = Offset(
         (current.dx + next.dx) / 2,
         (current.dy + next.dy) / 2,
@@ -988,14 +921,12 @@ class PathUtils {
     return path;
   }
 
-  /// Calculate distance between two points
   static double distance(Offset a, Offset b) {
     return math.sqrt(
       math.pow(a.dx - b.dx, 2) + math.pow(a.dy - b.dy, 2),
     );
   }
 
-  /// Generate navigation instructions for same-floor navigation
   static List<String> _generateNavigationInstructions(
     Map<String, dynamic> startRoom,
     Map<String, dynamic> endRoom,
@@ -1016,7 +947,6 @@ class PathUtils {
       totalDistance += distance(path[i], path[i + 1]);
     }
 
-    // Convert to approximate meters (assuming 1 pixel ≈ 0.1 meters, adjust based on your scale)
     final approximateMeters = (totalDistance * 0.1).round();
 
     instructions.add('📍 Starting from ${startRoom['id']}');
@@ -1031,7 +961,6 @@ class PathUtils {
     return instructions;
   }
 
-  /// Generate instructions for multi-level navigation
   static List<String> _generateMultiLevelInstructions(
     Map<String, dynamic> startRoom,
     Map<String, dynamic> endRoom,
@@ -1063,7 +992,6 @@ class PathUtils {
     instructions.add(
         '🚶 Step 2: Once on Floor ${endFloor}, follow the path to ${endRoom['id']}');
 
-    // Determine if going up or down
     try {
       final startFloorNum =
           int.parse(startFloor?.replaceAll(RegExp(r'[^0-9-]'), '') ?? '0');

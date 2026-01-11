@@ -2,7 +2,6 @@ import csv
 import heapq
 
 def load_edges(path="edges.csv"):
-    """Load edges and return a graph as adjacency list."""
     graph = {}
     with open(path, newline='', encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -11,13 +10,11 @@ def load_edges(path="edges.csv"):
             r2 = row["room2"]
             dist = float(row["dist"])
 
-            # Add the nodes in adjacency list
             if r1 not in graph:
                 graph[r1] = []
             if r2 not in graph:
                 graph[r2] = []
 
-            # Undirected graph: add both directions
             graph[r1].append((r2, dist))
             graph[r2].append((r1, dist))
 
@@ -25,12 +22,9 @@ def load_edges(path="edges.csv"):
 
 
 def dijkstra(graph, start, goal):
-    """Run Dijkstra's algorithm to find shortest path from start to goal."""
-    # Priority queue: (distance, node)
     pq = [(0, start)]
     visited = set()
 
-    # Distances and predecessor links
     dist = {node: float("inf") for node in graph}
     dist[start] = 0
     prev = {node: None for node in graph}
@@ -56,7 +50,6 @@ def dijkstra(graph, start, goal):
 
 
 def reconstruct_path(prev, start, goal):
-    """Reconstruct the path from predecessor links."""
     path = []
     node = goal
 
@@ -66,15 +59,12 @@ def reconstruct_path(prev, start, goal):
 
     path.reverse()
     if path[0] != start:
-        return None  # no path
+        return None
     return path
 
 
 def get_edges_from_path(path, graph):
-    """Convert a list of nodes into a list of edges with distances."""
     edges_taken = []
-
-    # Build a quick lookup for distances
     weight_lookup = {}
     for node in graph:
         for neigh, w in graph[node]:
@@ -94,7 +84,6 @@ def get_edges_from_path(path, graph):
 
 
 def shortest_path(start, goal, edges_file="edges.csv"):
-    """Main function: returns edges in shortest path and total distance."""
     graph = load_edges(edges_file)
     dist, prev = dijkstra(graph, start, goal)
     path = reconstruct_path(prev, start, goal)
@@ -108,22 +97,15 @@ def shortest_path(start, goal, edges_file="edges.csv"):
     return edges, total_distance
 
 
-# --------------------------
-# EXAMPLE USAGE
-# --------------------------
-
 if __name__ == "__main__":
-    # Load graph once to validate user input
     graph = load_edges("edges.csv")
 
-    # Ask user for start node and end node
     start_node = input("Enter start node ID: ").strip()
     end_node = input("Enter end node ID: ").strip()
     if (start_node not in graph) or (end_node not in graph):
         print(f"Error: It is not a valid room name.")
-        quit()  # stop program
+        quit()
 
-    # Compute shortest path
     edges, total = shortest_path(start_node, end_node)
 
     if edges is None:
@@ -134,4 +116,4 @@ if __name__ == "__main__":
             print(e["room1"], e["dist"], e["room2"])
 
         print("Total distance (in GoogleMaps units):", total)
-        print("Total distance (in meters):", total*20000) # HAVE TO FIND A CORRECT CONVERSION FACTOR
+        print("Total distance (in meters):", total*20000)

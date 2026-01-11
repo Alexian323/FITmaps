@@ -36,7 +36,6 @@ def on_polygon_boundary(px, py, pts, eps):
 
 
 def point_in_polygon(px, py, pts):
-    """Ray-casting algorithm."""
     inside = False
     n = len(pts)
     if n < 3:
@@ -80,7 +79,6 @@ def polygon_area(pts):
 
 
 def polygon_clip(subject, clip):
-    """Sutherland–Hodgman."""
     if not subject or not clip:
         return []
 
@@ -121,11 +119,6 @@ def polygon_clip(subject, clip):
 
 
 def polygons_adjacent(poly1, poly2, threshold_ratio=0.01):
-    """
-    Check if two polygons are adjacent (touching or overlapping).
-    Returns True if they share a boundary or overlap significantly.
-    threshold_ratio: minimum overlap ratio to consider adjacent (default 1%)
-    """
     if not poly1 or not poly2 or len(poly1) < 3 or len(poly2) < 3:
         return False
     
@@ -194,7 +187,6 @@ for entry in data:
 
     pts = info.get("gps_coords", [])
 
-    # Detect node type
     if "elevator" in title:
         t = "elevator"
     elif "staircase" in title:
@@ -275,11 +267,9 @@ for floor, group in floors.items():
 for floor, group in floors.items():
     nodes = group["nodes"]
     
-    # Separate corridors from regular rooms
     corridors = [n for n in nodes if n["type"] == "corridor"]
     regular_rooms = [n for n in nodes if n["type"] == "normal"]
     
-    # Connect corridors to each other if they're adjacent
     for i in range(len(corridors)):
         for j in range(i+1, len(corridors)):
             corrA = corridors[i]
@@ -293,7 +283,6 @@ for floor, group in floors.items():
                 if BIDIR:
                     edges.add((corrB["id"], corrA["id"], floor))
     
-    # Connect corridors to adjacent rooms
     for corridor in corridors:
         if not corridor["pts"]:
             continue
@@ -302,7 +291,6 @@ for floor, group in floors.items():
             if not room["pts"]:
                 continue
             
-            # Check if room touches corridor
             if polygons_adjacent(room["pts"], corridor["pts"]):
                 edges.add((room["id"], corridor["id"], floor))
                 if BIDIR:
@@ -353,8 +341,6 @@ with open(OUTPUT_EDGES, "w", newline="", encoding="utf-8") as f:
     w.writerow(["room1", "dist", "room2"])
 
     for (u, v, fl) in sorted(edges):
-
-        # Vertical vs horizontal distance
         if fl == "vertical":
             dist = VERTICAL_DISTANCE
         else:
@@ -364,7 +350,6 @@ with open(OUTPUT_EDGES, "w", newline="", encoding="utf-8") as f:
             x2, y2 = nv["centroid"]
             dist = round(sqrt((x1-x2)**2 + (y1-y2)**2), 6)
 
-        # Export (room1, dist, room2)
         w.writerow([u, dist, v])
 
 
