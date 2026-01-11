@@ -4,6 +4,7 @@ import 'package:fitmaps/config/theme.dart';
 import 'package:fitmaps/screens/profile_screen.dart';
 import 'package:fitmaps/screens/splash_screen.dart';
 import 'package:fitmaps/utils/map_path.dart';
+import 'package:fitmaps/utils/graph_pathfinder.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'dart:math' as math;
@@ -20,6 +21,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final _searchController = TextEditingController();
+  final _startingPointController = TextEditingController();
   final _interactiveController = TransformationController();
   final _mapViewKey = GlobalKey();
   late AnimationController _pulseController;
@@ -35,6 +37,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   String _searchQuery = '';
   List<Map<String, dynamic>> _searchSuggestions = [];
   bool _showSuggestions = false;
+  Map<String, dynamic>? _selectedSearchRoom;
+  List<Map<String, dynamic>> _startingPointSuggestions = [];
+  bool _showStartingPointSuggestions = false;
 
   // Drawer state
   bool _isDrawerOpen = false;
@@ -46,17 +51,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // Path drawing state
   List<MapPath> _navigationPaths = [];
   UserTrail _userTrail = UserTrail();
-  
+
   // Current location (for testing - A109 corridor is the default source)
   Map<String, dynamic>? _currentLocationRoom;
-  
+
   // Destination room (room clicked/selected for navigation - markers only show for this)
   Map<String, dynamic>? _destinationRoom;
-  
+
   // Navigation instructions
   List<String> _navigationInstructions = [];
   bool _showNavigationInstructions = false;
   bool _navigationInstructionsExpanded = false;
+
+  // Graph pathfinder
+  final GraphPathfinder _graphPathfinder = GraphPathfinder();
+  bool _graphLoaded = false;
 
   @override
   void initState() {
@@ -92,19 +101,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Future<void> _loadRoomData() async {
     try {
-      // Load room data from merged JSON file (contains both coords and gps_coords)
-      // Falls back to original file if merged file doesn't exist for backward compatibility
+      // Load room data from full JSON file with floor numbers and GPS coordinates
       String jsonString;
       try {
-        jsonString = await DefaultAssetBundle.of(context)
-            .loadString('data/parsed_data/maps_data_merged.json');
+        jsonString = await DefaultAssetBundle.of(context).loadString(
+            'graph/maps_data_full_with_floor_no_with_gps_coords.json');
+        print('Loaded maps_data_full_with_floor_no_with_gps_coords.json');
       } catch (e) {
-        // Fallback to original file if merged doesn't exist
-        print('Merged file not found, using original maps_data.json');
-        jsonString = await DefaultAssetBundle.of(context)
-            .loadString('data/parsed_data/maps_data.json');
+        // Fallback to merged file if full file doesn't exist
+        print('Full file not found, trying merged file...');
+        try {
+          jsonString = await DefaultAssetBundle.of(context)
+              .loadString('data/parsed_data/maps_data_merged.json');
+        } catch (e2) {
+          // Final fallback to original file
+          print('Merged file not found, using original maps_data.json');
+          jsonString = await DefaultAssetBundle.of(context)
+              .loadString('data/parsed_data/maps_data.json');
+        }
       }
-      
+
+      // Load graph data for pathfinding
+      try {
+        await _graphPathfinder.loadGraph();
+        _graphLoaded = true;
+        print('Graph pathfinder loaded successfully');
+      } catch (e) {
+        print('Warning: Could not load graph data: $e');
+        _graphLoaded = false;
+      }
+
       final List<dynamic> allRooms = json.decode(jsonString);
 
       // Load all rooms from all floors
@@ -112,16 +138,43 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       for (final roomEntry in allRooms) {
         if (roomEntry is Map<String, dynamic>) {
           for (final entry in roomEntry.entries) {
-            final roomId = entry.key;
+            final roomIdWithFloor =
+                entry.key; // Format: "ROOM__FLOOR" (e.g., "A109__+1")
             final roomData = entry.value as Map<String, dynamic>;
+
+            // Extract room ID and floor from the key
+            String roomId;
+            String floorNo;
+            if (roomIdWithFloor.contains('__')) {
+              final parts = roomIdWithFloor.split('__');
+              roomId = parts[0];
+              floorNo = parts.length > 1
+                  ? parts[1]
+                  : (roomData['floor_no']?.toString() ?? '');
+            } else {
+              roomId = roomIdWithFloor;
+              floorNo = roomData['floor_no']?.toString() ?? '';
+            }
+
+            // Get coordinates - prefer coords (pixel), fallback to gps_coords
+            // Note: GPS coordinates would need conversion to pixel coordinates for rendering
+            List<dynamic> coords = roomData['coords'] ?? [];
+            if (coords.isEmpty && roomData['gps_coords'] != null) {
+              // If no pixel coords, use GPS coords as fallback
+              // TODO: Convert GPS coordinates to pixel coordinates if needed
+              coords = roomData['gps_coords'] as List<dynamic>;
+            }
+
             allRoomsList.add({
               'id': roomId,
+              'id_with_floor':
+                  roomIdWithFloor, // Store full ID for graph matching
               'title': roomData['title'] ?? '',
-              'coords': roomData['coords'] ?? [], // Pixel coordinates for rendering
-              'gps_coords': roomData['gps_coords'], // GPS coordinates (optional, for location tracking)
+              'coords': coords,
+              'gps_coords': roomData['gps_coords'], // GPS coordinates
               'room_tag': roomData['room_tag'] ?? '',
               'onclick': roomData['onclick'] ?? '',
-              'floor_no': roomData['floor_no'] ?? '',
+              'floor_no': floorNo,
             });
           }
         }
@@ -138,6 +191,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       // Do this after rooms are loaded
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _setCurrentLocation('A109');
+        // Set default value in starting point controller
+        _startingPointController.text = 'A109';
       });
 
       // Load current floor data
@@ -180,13 +235,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final floorRooms = _allRoomsData
         .where((room) => room['floor_no']?.toString() == currentFloor)
         .toList();
-    
+
     // Ensure current location room is always highlighted if on current floor
     if (_currentLocationRoom != null) {
-      final currentLocationFloor = _currentLocationRoom!['floor_no']?.toString();
+      final currentLocationFloor =
+          _currentLocationRoom!['floor_no']?.toString();
       if (currentLocationFloor == currentFloor) {
         // Current location is on this floor - ensure it's visible
-        if (!_highlightedRooms.any((r) => r['id'] == _currentLocationRoom!['id'])) {
+        if (!_highlightedRooms
+            .any((r) => r['id'] == _currentLocationRoom!['id'])) {
           _highlightedRooms.add(_currentLocationRoom!);
         }
       }
@@ -232,33 +289,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   /// Handles various formats: "FirstName LastName, Title, Ph.D. +phone"
   List<String> _extractLecturerNames(String title) {
     final lecturerNames = <String>{};
-    
+
     // Check if title contains "Office" (case-insensitive)
     final lowerTitle = title.toLowerCase();
     if (!lowerTitle.contains('office')) {
       return lecturerNames.toList();
     }
-    
+
     // Split by newlines
     final lines = title.split('\n');
-    
+
     // Skip the first line (room ID and "Office")
     for (int i = 1; i < lines.length; i++) {
       final line = lines[i].trim();
       if (line.isEmpty) continue;
-      
+
       // Extract lecturer name (everything before the first comma or phone number)
       // Format: "FirstName LastName, Title, Ph.D. +420 54114 1356" or "FirstName LastName, Title"
       String lecturerName = line;
-      
+
       // Remove phone numbers (starts with +420 or + followed by digits)
       lecturerName = lecturerName.replaceAll(RegExp(r'\s*\+420[^\s]*'), '');
       lecturerName = lecturerName.replaceAll(RegExp(r'\s*\+[0-9]+[^\s]*'), '');
-      
+
       // Remove semicolons and extra spaces
       lecturerName = lecturerName.replaceAll(';', ' ').trim();
       lecturerName = lecturerName.replaceAll(RegExp(r'\s+'), ' ');
-      
+
       // Split by comma to get name parts
       final parts = lecturerName.split(',');
       if (parts.isNotEmpty) {
@@ -267,29 +324,31 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           // Add full name (normalized)
           final normalizedName = namePart.toLowerCase();
           lecturerNames.add(normalizedName);
-          
+
           // Split name into words for better matching
-          final nameWords = namePart.split(' ').where((w) => w.trim().isNotEmpty).toList();
-          
+          final nameWords =
+              namePart.split(' ').where((w) => w.trim().isNotEmpty).toList();
+
           if (nameWords.length >= 2) {
             // Add last name (usually the last word)
             final lastName = nameWords.last.toLowerCase();
             lecturerNames.add(lastName);
-            
+
             // Add first name (usually the first word)
             final firstName = nameWords.first.toLowerCase();
             lecturerNames.add(firstName);
-            
+
             // Add "FirstName LastName" combination
             lecturerNames.add('$firstName $lastName');
-            
+
             // Add "LastName FirstName" combination (for reverse search)
             lecturerNames.add('$lastName $firstName');
-            
+
             // If there's a middle name, add combinations
             if (nameWords.length >= 3) {
               // Add "FirstName MiddleName LastName"
-              lecturerNames.add(nameWords.map((w) => w.toLowerCase()).join(' '));
+              lecturerNames
+                  .add(nameWords.map((w) => w.toLowerCase()).join(' '));
             }
           } else if (nameWords.length == 1) {
             // Single word name
@@ -298,12 +357,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         }
       }
     }
-    
+
     return lecturerNames.toList();
   }
 
   /// Build title with highlighted lecturer name
-  Widget _buildHighlightedTitle(String title, String? highlightedLecturer, String query) {
+  Widget _buildHighlightedTitle(
+      String title, String? highlightedLecturer, String query) {
     if (highlightedLecturer != null && query.isNotEmpty) {
       // Split title by newlines
       final lines = title.split('\n');
@@ -311,20 +371,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         // First line is room ID + Office
         final firstLine = lines[0];
         final remainingLines = lines.sublist(1).join('\n');
-        
+
         // Find and highlight the lecturer name
         final lowerRemaining = remainingLines.toLowerCase();
         final queryLower = query.toLowerCase();
-        
+
         // Find the position of the matching lecturer name
         final matchIndex = lowerRemaining.indexOf(queryLower);
         if (matchIndex != -1) {
           // Extract the part before, the match, and after
           final beforeMatch = remainingLines.substring(0, matchIndex);
           final matchLength = queryLower.length;
-          final matchText = remainingLines.substring(matchIndex, matchIndex + matchLength);
+          final matchText =
+              remainingLines.substring(matchIndex, matchIndex + matchLength);
           final afterMatch = remainingLines.substring(matchIndex + matchLength);
-          
+
           return RichText(
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -351,7 +412,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         }
       }
     }
-    
+
     // Default: show title without highlighting
     return Text(
       title,
@@ -367,22 +428,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   /// Check if a room matches the search query (by room ID, title, or lecturer names)
   bool _roomMatchesQuery(Map<String, dynamic> room, String query) {
     if (query.isEmpty) return false;
-    
+
     final lowerQuery = query.toLowerCase().trim();
     final roomId = room['id']?.toString().toLowerCase() ?? '';
     final title = room['title']?.toString() ?? '';
     final lowerTitle = title.toLowerCase();
-    
+
     // Check room ID
     if (roomId.contains(lowerQuery)) {
       return true;
     }
-    
+
     // Check title (this should catch lecturer names in Office rooms too)
     if (lowerTitle.contains(lowerQuery)) {
       return true;
     }
-    
+
     // Check lecturer names for Office rooms (more precise matching)
     final lecturerNames = _extractLecturerNames(title);
     for (final lecturerName in lecturerNames) {
@@ -390,7 +451,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         return true;
       }
     }
-    
+
     return false;
   }
 
@@ -399,6 +460,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _searchQuery = query.toLowerCase().trim();
 
       if (_searchQuery.isEmpty) {
+      _selectedSearchRoom = null;
         _highlightedRooms = [];
         _destinationRoom = null; // Clear destination when search is cleared
         _resetZoom();
@@ -421,10 +483,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             // Also include current location room if it exists and is on this floor
             _highlightedRooms = List.from(currentFloorRooms);
             if (_currentLocationRoom != null) {
-              final currentFloorId = _currentLocationRoom!['floor_no']?.toString();
+              final currentFloorId =
+                  _currentLocationRoom!['floor_no']?.toString();
               if (currentFloorId == _getCurrentFloorId()) {
                 // Add current location if not already in highlighted rooms
-                if (!_highlightedRooms.any((r) => r['id'] == _currentLocationRoom!['id'])) {
+                if (!_highlightedRooms
+                    .any((r) => r['id'] == _currentLocationRoom!['id'])) {
                   _highlightedRooms.add(_currentLocationRoom!);
                 }
               }
@@ -499,7 +563,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   /// Set navigation path between two rooms
-  /// 
+  ///
   /// Example usage:
   /// ```dart
   /// final startRoom = getRoomById('D006');
@@ -508,7 +572,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   ///   setNavigationPath(startRoom, endRoom);
   /// }
   /// ```
-  void setNavigationPath(Map<String, dynamic> startRoom, Map<String, dynamic> endRoom) {
+  void setNavigationPath(
+      Map<String, dynamic> startRoom, Map<String, dynamic> endRoom) {
     // Use corridor-aware routing for better paths
     final pathPoints = PathUtils.generatePathThroughCorridors(
       startRoom,
@@ -528,7 +593,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     List<Map<String, dynamic>> waypoints,
     Map<String, dynamic> endRoom,
   ) {
-    final pathPoints = PathUtils.generatePathThroughWaypoints(startRoom, waypoints, endRoom);
+    final pathPoints =
+        PathUtils.generatePathThroughWaypoints(startRoom, waypoints, endRoom);
     setState(() {
       _navigationPaths = [
         MapPath.navigation(points: pathPoints),
@@ -572,11 +638,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _currentLocationRoom = room;
       });
       print('Current location set to: $roomId');
-      
+
       // Switch to the floor where the current location is
       final floorNo = room['floor_no']?.toString();
       if (floorNo != null) {
         _switchToFloor(floorNo);
+      }
+
+      // Recalculate navigation if a destination is already selected
+      if (_destinationRoom != null) {
+        _navigateToRoom(_destinationRoom!);
       }
     } else {
       print('Room $roomId not found for current location');
@@ -589,29 +660,99 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     setState(() {
       _destinationRoom = destinationRoom;
     });
-    
+
     if (_currentLocationRoom == null) {
       // If no current location, set A109 corridor as default
       _setCurrentLocation('A109');
     }
-    
+
     if (_currentLocationRoom != null) {
       final startRoom = _currentLocationRoom!;
       final endRoom = destinationRoom;
-      
-      // Use the new navigation system with instructions
+
+      // Try graph-based pathfinding first if available
+      if (_graphLoaded && _graphPathfinder.isLoaded) {
+        final startRoomId = startRoom['id']?.toString() ?? '';
+        final startFloor = startRoom['floor_no']?.toString() ?? '';
+        final endRoomId = endRoom['id']?.toString() ?? '';
+        final endFloor = endRoom['floor_no']?.toString() ?? '';
+
+        print(
+            'Finding graph path from $startRoomId (floor $startFloor) to $endRoomId (floor $endFloor)');
+
+        final graphResult = _graphPathfinder.findShortestPath(
+          startRoomId,
+          startFloor,
+          endRoomId,
+          endFloor,
+        );
+
+        if (graphResult != null) {
+          print(
+              'Graph path found: ${graphResult.path.length} nodes, ${graphResult.totalDistance} units, ${graphResult.estimatedTimeMinutes.toStringAsFixed(1)} min');
+
+          // Convert graph path to pixel coordinates
+          final pathPoints = _convertGraphPathToCoordinates(graphResult.path);
+
+          if (pathPoints.isNotEmpty) {
+            // Generate navigation instructions from graph path
+            final instructions = _generateInstructionsFromGraphPath(
+              graphResult.path,
+              graphResult.estimatedTimeMinutes,
+              graphResult.totalDistance,
+            );
+
+            setState(() {
+              _navigationPaths = [
+                MapPath.navigation(points: pathPoints),
+              ];
+              _navigationInstructions = instructions;
+              _showNavigationInstructions = instructions.isNotEmpty;
+            });
+
+            print(
+                'Navigation path created using graph: ${pathPoints.length} points');
+
+            // Switch to appropriate floor
+            if (startFloor != endFloor) {
+              // Multi-level: start on start floor
+              _switchToFloor(startFloor);
+            } else {
+              // Same floor: switch to destination floor
+              _switchToFloor(endFloor);
+            }
+
+            // Zoom to show both rooms and path
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _zoomToRooms([startRoom, endRoom]);
+            });
+
+            return; // Successfully used graph pathfinding
+          } else {
+            print(
+                'Warning: Could not convert graph path to coordinates, falling back to corridor routing');
+          }
+        } else {
+          print(
+              'Warning: Graph pathfinding failed, falling back to corridor routing');
+        }
+      }
+
+      // Fallback to corridor-based routing if graph pathfinding fails
       final navigationResult = PathUtils.generatePathWithInstructions(
         startRoom,
         endRoom,
         _allRoomsData,
       );
-      
+
       print('Path points generated: ${navigationResult.path.length} points');
       if (navigationResult.path.isNotEmpty) {
-        print('First point: (${navigationResult.path.first.dx}, ${navigationResult.path.first.dy})');
-        print('Last point: (${navigationResult.path.last.dx}, ${navigationResult.path.last.dy})');
+        print(
+            'First point: (${navigationResult.path.first.dx}, ${navigationResult.path.first.dy})');
+        print(
+            'Last point: (${navigationResult.path.last.dx}, ${navigationResult.path.last.dy})');
       }
-      
+
       setState(() {
         _navigationPaths = [
           MapPath.navigation(points: navigationResult.path),
@@ -619,10 +760,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         _navigationInstructions = navigationResult.instructions;
         _showNavigationInstructions = navigationResult.instructions.isNotEmpty;
       });
-      
-      print('Navigation path created from ${startRoom['id']} to ${endRoom['id']}');
-      print('Navigation instructions: ${navigationResult.instructions.length} steps');
-      
+
+      print(
+          'Navigation path created from ${startRoom['id']} to ${endRoom['id']}');
+      print(
+          'Navigation instructions: ${navigationResult.instructions.length} steps');
+
       // If multi-level, switch to start floor first to show path to staircase/lift
       if (navigationResult.isMultiLevel) {
         final startFloor = startRoom['floor_no']?.toString();
@@ -632,12 +775,143 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         final endFloor = endRoom['floor_no']?.toString();
         _switchToFloor(endFloor);
       }
-      
+
       // Zoom to show both rooms and path
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _zoomToRooms([startRoom, endRoom]);
       });
     }
+  }
+
+  /// Convert graph path (list of node IDs) to pixel coordinates
+  List<Offset> _convertGraphPathToCoordinates(List<String> graphPath) {
+    final pathPoints = <Offset>[];
+
+    for (final nodeId in graphPath) {
+      // Find room by ID with floor format
+      Map<String, dynamic>? room;
+
+      // Try to find by id_with_floor first (if available)
+      try {
+        final parts = nodeId.split('__');
+        final roomIdPart = parts[0];
+        final floorPart = parts.length > 1 ? parts[1] : '';
+
+        room = _allRoomsData.firstWhere(
+          (r) =>
+              r['id_with_floor'] == nodeId ||
+              (r['id'] == roomIdPart && r['floor_no']?.toString() == floorPart),
+        );
+      } catch (e) {
+        // Try finding by just the room ID part
+        final roomIdPart = nodeId.split('__')[0];
+        try {
+          room = _allRoomsData.firstWhere((r) => r['id'] == roomIdPart);
+        } catch (e2) {
+          print('Warning: Could not find room for node $nodeId');
+          continue;
+        }
+      }
+
+      final coords = room['coords'] as List<dynamic>? ?? [];
+      if (coords.isEmpty) {
+        // If no pixel coords, try GPS coords (would need conversion, but skip for now)
+        print('Warning: Room ${room['id']} has no pixel coordinates');
+        continue;
+      }
+
+      final center = PathUtils.getRoomCenter(coords);
+      if (center != Offset.zero || pathPoints.isEmpty) {
+        pathPoints.add(center);
+      }
+    }
+
+    return pathPoints;
+  }
+
+  /// Generate navigation instructions from graph path
+  List<String> _generateInstructionsFromGraphPath(
+    List<String> path,
+    double estimatedTimeMinutes,
+    double totalDistance,
+  ) {
+    final instructions = <String>[];
+
+    if (path.isEmpty) return instructions;
+
+    // Add header with ETX
+    final distanceMeters = (totalDistance * 20000).toStringAsFixed(0);
+    instructions.add(
+        '📍 Route found: ${path.length - 1} steps (~${estimatedTimeMinutes.toStringAsFixed(1)} min, ~$distanceMeters m)');
+    instructions.add('');
+
+    // Track floor changes
+    String? currentFloor;
+    String? previousFloor;
+
+    for (int i = 0; i < path.length; i++) {
+      final nodeId = path[i];
+      final parts = nodeId.split('__');
+      final roomId = parts[0];
+      final floor = parts.length > 1 ? parts[1] : '';
+
+      // Find room info
+      Map<String, dynamic>? room;
+      try {
+        room = _allRoomsData.firstWhere(
+          (r) =>
+              r['id_with_floor'] == nodeId ||
+              (r['id'] == roomId && r['floor_no']?.toString() == floor),
+        );
+      } catch (e) {
+        try {
+          room = _allRoomsData.firstWhere((r) => r['id'] == roomId);
+        } catch (e2) {
+          continue;
+        }
+      }
+
+      final title = room['title']?.toString() ?? roomId;
+      currentFloor = room['floor_no']?.toString() ?? floor;
+
+      // Check for floor change
+      if (previousFloor != null && currentFloor != previousFloor) {
+        final floorChange = int.tryParse(currentFloor) ?? 0;
+        final prevFloorNum = int.tryParse(previousFloor) ?? 0;
+        final floorDiff = floorChange - prevFloorNum;
+
+        if (floorDiff > 0) {
+          instructions.add('⬆️ Go up $floorDiff floor(s) via $title');
+        } else if (floorDiff < 0) {
+          instructions.add('⬇️ Go down ${-floorDiff} floor(s) via $title');
+        }
+        instructions.add('');
+      }
+
+      // Add step instruction
+      if (i == 0) {
+        instructions.add('🚶 Start at $title');
+      } else if (i == path.length - 1) {
+        instructions.add('✅ Arrive at $title');
+      } else {
+        // Check if this is a corridor, staircase, or elevator
+        final lowerTitle = title.toLowerCase();
+        if (lowerTitle.contains('corridor')) {
+          instructions.add('🚶 Continue through $title');
+        } else if (lowerTitle.contains('staircase')) {
+          instructions.add('🪜 Use $title');
+        } else if (lowerTitle.contains('elevator') ||
+            lowerTitle.contains('lift')) {
+          instructions.add('🛗 Use $title');
+        } else {
+          instructions.add('🚶 Pass through $title');
+        }
+      }
+
+      previousFloor = currentFloor;
+    }
+
+    return instructions;
   }
 
   /// Clear navigation path
@@ -674,38 +948,57 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
   }
 
+  void _updateStartingPointSuggestions(String query) {
+    if (query.isEmpty) {
+      setState(() {
+        _startingPointSuggestions = [];
+        _showStartingPointSuggestions = false;
+      });
+      return;
+    }
+
+    final suggestions = _allRoomsData
+        .where((room) {
+          return _roomMatchesQuery(room, query);
+        })
+        .take(10)
+        .toList(); // Limit to 10 suggestions for better UX
+
+    setState(() {
+      _startingPointSuggestions = suggestions;
+      _showStartingPointSuggestions = suggestions.isNotEmpty;
+    });
+  }
+
+  String _formatFloorDisplay(String floorNo) {
+    switch (floorNo) {
+      case '+1':
+        return '1st Floor';
+      case '+2':
+        return '2nd Floor';
+      case '+3':
+        return '3rd Floor';
+      case '-1':
+        return '-1st Floor';
+      case '-2':
+        return '-2nd Floor';
+      default:
+        return '$floorNo Floor';
+    }
+  }
+
   Widget _buildSuggestionItem(Map<String, dynamic> room, String query) {
     final roomId = room['id'] as String;
     final title = room['title'] as String;
     final floorNo = room['floor_no'] as String;
     final lowerQuery = query.toLowerCase().trim();
 
-    // Format floor display name
-    String floorDisplay;
-    switch (floorNo) {
-      case '+1':
-        floorDisplay = '1st Floor';
-        break;
-      case '+2':
-        floorDisplay = '2nd Floor';
-        break;
-      case '+3':
-        floorDisplay = '3rd Floor';
-        break;
-      case '-1':
-        floorDisplay = '-1st Floor';
-        break;
-      case '-2':
-        floorDisplay = '-2nd Floor';
-        break;
-      default:
-        floorDisplay = '$floorNo Floor';
-    }
+    final floorDisplay = _formatFloorDisplay(floorNo);
 
     // Find matching lecturer name in title for highlighting
     String displayTitle = title;
     String? highlightedLecturer;
-    
+
     if (title.toLowerCase().contains('office') && lowerQuery.isNotEmpty) {
       final lecturerNames = _extractLecturerNames(title);
       for (final lecturerName in lecturerNames) {
@@ -720,7 +1013,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               if (parts.isNotEmpty) {
                 final namePart = parts[0].trim();
                 // Remove phone numbers
-                final cleanName = namePart.replaceAll(RegExp(r'\s*\+420[^\s]*'), '')
+                final cleanName = namePart
+                    .replaceAll(RegExp(r'\s*\+420[^\s]*'), '')
                     .replaceAll(RegExp(r'\s*\+[0-9]+[^\s]*'), '')
                     .trim();
                 if (cleanName.toLowerCase().contains(lowerQuery)) {
@@ -739,14 +1033,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       onTap: () {
         // Dismiss keyboard when room is selected
         FocusScope.of(context).unfocus();
-        
+
         _searchController.text = roomId;
         setState(() {
           _showSuggestions = false;
           _isSearching = true;
+          _selectedSearchRoom = room;
         });
         _performSearch(roomId);
-        
+
         // Set as destination and navigate (this will show the marker)
         _navigateToRoom(room);
       },
@@ -778,7 +1073,192 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ),
                   if (displayTitle.isNotEmpty && displayTitle != roomId)
-                    _buildHighlightedTitle(displayTitle, highlightedLecturer, lowerQuery),
+                    _buildHighlightedTitle(
+                        displayTitle, highlightedLecturer, lowerQuery),
+                ],
+              ),
+            ),
+            SizedBox(width: 8),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                floorDisplay,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: AppTheme.primaryColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectedSearchRoomDetails() {
+    if (_selectedSearchRoom == null) return SizedBox.shrink();
+
+    final room = _selectedSearchRoom!;
+    final roomId = room['id']?.toString() ?? '';
+    final title = room['title']?.toString() ?? '';
+    final floorDisplay = _formatFloorDisplay(room['floor_no']?.toString() ?? '');
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        border: Border(
+          top: BorderSide(color: Colors.grey[200]!, width: 1),
+          bottom: BorderSide(color: Colors.grey[200]!, width: 1),
+        ),
+      ),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Icon(
+            Icons.room_preferences,
+            color: AppTheme.primaryColor,
+            size: 20,
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  roomId,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                if (title.isNotEmpty)
+                  Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          SizedBox(width: 8),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              floorDisplay,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.primaryColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStartingPointSuggestionItem(
+      Map<String, dynamic> room, String query) {
+    final roomId = room['id'] as String;
+    final title = room['title'] as String;
+    final floorNo = room['floor_no'] as String;
+    final lowerQuery = query.toLowerCase().trim();
+
+    final floorDisplay = _formatFloorDisplay(floorNo);
+
+    // Find matching lecturer name in title for highlighting
+    String displayTitle = title;
+    String? highlightedLecturer;
+
+    if (title.toLowerCase().contains('office') && lowerQuery.isNotEmpty) {
+      final lecturerNames = _extractLecturerNames(title);
+      for (final lecturerName in lecturerNames) {
+        if (lecturerName.contains(lowerQuery)) {
+          // Find the actual lecturer name in the title (with original casing)
+          final lines = title.split('\n');
+          for (int i = 1; i < lines.length; i++) {
+            final line = lines[i].trim();
+            if (line.toLowerCase().contains(lecturerName)) {
+              // Extract the name part (before comma)
+              final parts = line.split(',');
+              if (parts.isNotEmpty) {
+                final namePart = parts[0].trim();
+                // Remove phone numbers
+                final cleanName = namePart
+                    .replaceAll(RegExp(r'\s*\+420[^\s]*'), '')
+                    .replaceAll(RegExp(r'\s*\+[0-9]+[^\s]*'), '')
+                    .trim();
+                if (cleanName.toLowerCase().contains(lowerQuery)) {
+                  highlightedLecturer = cleanName;
+                  break;
+                }
+              }
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    return InkWell(
+      onTap: () {
+        // Dismiss keyboard when room is selected
+        FocusScope.of(context).unfocus();
+
+        _startingPointController.text = roomId;
+        setState(() {
+          _showStartingPointSuggestions = false;
+        });
+
+        // Set as current location
+        _setCurrentLocation(roomId);
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Colors.grey[200]!, width: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.location_on,
+              color: AppTheme.primaryColor,
+              size: 20,
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    roomId,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  if (displayTitle.isNotEmpty && displayTitle != roomId)
+                    _buildHighlightedTitle(
+                        displayTitle, highlightedLecturer, lowerQuery),
                 ],
               ),
             ),
@@ -813,7 +1293,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final mediaQuery = MediaQuery.of(this.context);
       final screenWidth = mediaQuery.size.width;
       final screenHeight = mediaQuery.size.height;
-      
+
       // Account for top padding and bottom navigation
       final topPadding = mediaQuery.padding.top + 120;
       final bottomPadding = 80;
@@ -856,14 +1336,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       // Calculate scale to fit the highlighted rooms (zoom in but not too close)
       final scaleX = mapWidth / roomWidth;
       final scaleY = mapHeight / roomHeight;
-      final targetScale = math.min(math.min(scaleX, scaleY), 1.5); // Cap at 1.5x zoom (not too close)
+      final targetScale = math.min(
+          math.min(scaleX, scaleY), 1.5); // Cap at 1.5x zoom (not too close)
 
       // Get the actual content size from the map (as rendered in SizedBox)
       // This is calculated in _buildFullSizeMap and matches the aspect ratio
       final mapAspectRatio = mapWidth / mapHeight;
       double actualContentWidth = viewportWidth;
       double actualContentHeight = viewportWidth / mapAspectRatio;
-      
+
       if (actualContentHeight > viewportHeight) {
         actualContentHeight = viewportHeight;
         actualContentWidth = viewportHeight * mapAspectRatio;
@@ -874,7 +1355,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       // Content coordinates are in the range [0, actualContentWidth] x [0, actualContentHeight]
       final normalizedX = (centerX - _mapMinX) / mapWidth;
       final normalizedY = (centerY - _mapMinY) / mapHeight;
-      
+
       // Convert to content pixel coordinates (relative to content's top-left)
       final contentPixelX = normalizedX * actualContentWidth;
       final contentPixelY = normalizedY * actualContentHeight;
@@ -937,7 +1418,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final mediaQuery = MediaQuery.of(this.context);
       final screenWidth = mediaQuery.size.width;
       final screenHeight = mediaQuery.size.height;
-      
+
       // Account for top padding and bottom navigation
       final topPadding = mediaQuery.padding.top + 120;
       final bottomPadding = 80;
@@ -982,14 +1463,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       // Calculate scale (zoom in but not too close)
       final scaleX = mapWidth / roomWidth;
       final scaleY = mapHeight / roomHeight;
-      final targetScale = math.min(math.min(scaleX, scaleY), 1.5); // Cap at 1.5x zoom
+      final targetScale =
+          math.min(math.min(scaleX, scaleY), 1.5); // Cap at 1.5x zoom
 
       // Get the actual content size from the map (as rendered in SizedBox)
       // This is calculated in _buildFullSizeMap and matches the aspect ratio
       final mapAspectRatio = mapWidth / mapHeight;
       double actualContentWidth = viewportWidth;
       double actualContentHeight = viewportWidth / mapAspectRatio;
-      
+
       if (actualContentHeight > viewportHeight) {
         actualContentHeight = viewportHeight;
         actualContentWidth = viewportHeight * mapAspectRatio;
@@ -1000,7 +1482,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       // Content coordinates are in the range [0, actualContentWidth] x [0, actualContentHeight]
       final normalizedX = (centerX - _mapMinX) / mapWidth;
       final normalizedY = (centerY - _mapMinY) / mapHeight;
-      
+
       // Convert to content pixel coordinates (relative to content's top-left)
       final contentPixelX = normalizedX * actualContentWidth;
       final contentPixelY = normalizedY * actualContentHeight;
@@ -1109,8 +1591,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
       // Check if tap is within marker bounds (for destination rooms) or inside room polygon (for highlighted rooms)
       final distance = (tapPosition - Offset(centerX, centerY)).distance;
-      const clickableRadius = 80.0; // Very large clickable area for easy clicking
-      
+      const clickableRadius =
+          80.0; // Very large clickable area for easy clicking
+
       // Check if tap is inside the room polygon (for highlighted rooms without markers)
       bool isInsideRoom = false;
       if (_highlightedRooms.contains(room)) {
@@ -1122,8 +1605,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           if (coordList.length >= 2) {
             final x = (coordList[0] as num).toDouble();
             final y = (coordList[1] as num).toDouble();
-            final mappedX = ((x - _mapMinX) / (_mapMaxX - _mapMinX)) * canvasSize.width;
-            final mappedY = ((y - _mapMinY) / (_mapMaxY - _mapMinY)) * canvasSize.height;
+            final mappedX =
+                ((x - _mapMinX) / (_mapMaxX - _mapMinX)) * canvasSize.width;
+            final mappedY =
+                ((y - _mapMinY) / (_mapMaxY - _mapMinY)) * canvasSize.height;
             if (firstPoint) {
               roomPolygon.moveTo(mappedX, mappedY);
               firstPoint = false;
@@ -1135,8 +1620,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         roomPolygon.close();
         isInsideRoom = roomPolygon.contains(tapPosition);
       }
-      
-      print('Distance to ${room['id']}: $distance (threshold: $clickableRadius), inside: $isInsideRoom');
+
+      print(
+          'Distance to ${room['id']}: $distance (threshold: $clickableRadius), inside: $isInsideRoom');
 
       if (distance <= clickableRadius || isInsideRoom) {
         print('Room clicked: ${room['id']}');
@@ -1151,7 +1637,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _onMarkerClicked(Map<String, dynamic> room) {
     // Dismiss keyboard when room is clicked
     FocusScope.of(context).unfocus();
-    
+
     setState(() {
       _selectedRoom = room;
       _destinationRoom = room; // Set as destination for navigation
@@ -1166,7 +1652,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     // Load room photos
     _loadRoomPhotos(room);
-    
+
     // Automatically navigate to this room
     _navigateToRoom(room);
   }
@@ -1217,33 +1703,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       // Clean the URL - remove any trailing spaces or issues
       final cleanUrl = roomUrl.trim();
       print('Fetching room page: $cleanUrl');
-      
+
       // Validate URL
       final uri = Uri.parse(cleanUrl);
       if (!uri.hasScheme || !uri.hasAuthority) {
         print('Invalid URL format: $cleanUrl');
         return [];
       }
-      
+
       // Make HTTP request
       // For web, browsers handle CORS - if server doesn't allow it, request will fail
       // Use CORS proxy for web to bypass CORS restrictions
       // For mobile/desktop, use standard http client
       http.Response response;
-      
+
       if (kIsWeb) {
         // Web platform - use CORS proxy to bypass browser CORS restrictions
         print('Making request from web platform (using CORS proxy)...');
-        
+
         // Use a CORS proxy service (allorigins.win is a free, open-source proxy)
         // This proxies the request server-side, bypassing browser CORS
-        final proxyUrl = 'https://api.allorigins.win/raw?url=${Uri.encodeComponent(cleanUrl)}';
+        final proxyUrl =
+            'https://api.allorigins.win/raw?url=${Uri.encodeComponent(cleanUrl)}';
         print('Proxied URL: $proxyUrl');
-        
+
         response = await http.get(
           Uri.parse(proxyUrl),
           headers: {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept':
+                'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           },
         ).timeout(
           Duration(seconds: 25), // Slightly longer for proxy
@@ -1261,8 +1749,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           response = await client.get(
             uri,
             headers: {
-              'User-Agent': 'Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/109.0 Firefox/109.0',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'User-Agent':
+                  'Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/109.0 Firefox/109.0',
+              'Accept':
+                  'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
               'Accept-Language': 'en-US,en;q=0.9',
             },
           ).timeout(
@@ -1280,18 +1770,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           client.close();
         }
       }
-      
+
       if (response.statusCode != 200) {
         print('Failed to fetch room page: ${response.statusCode}');
-        print('Response body: ${response.body.substring(0, math.min(200, response.body.length))}');
+        print(
+            'Response body: ${response.body.substring(0, math.min(200, response.body.length))}');
         return [];
       }
 
       final htmlContent = response.body;
       print('Successfully fetched HTML (${htmlContent.length} bytes)');
-      
+
       final photoUrls = <String>[];
-      
+
       // Helper function to clean and convert relative URLs to absolute
       String convertToAbsoluteUrl(String src) {
         // Remove quotes and whitespace
@@ -1302,7 +1793,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           cleaned = cleaned.substring(1, cleaned.length - 1);
         }
         cleaned = cleaned.trim();
-        
+
         // If already absolute, return as-is
         if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
           return cleaned;
@@ -1314,7 +1805,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           return 'https://www.fit.vut.cz/$cleaned';
         }
       }
-      
+
       // Helper function to proxy URL for web platform (to bypass CORS)
       String proxyUrlIfWeb(String url) {
         if (kIsWeb && url.startsWith('http')) {
@@ -1323,11 +1814,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         }
         return url;
       }
-      
+
       // Helper function to add photo URL if valid
       void addPhotoUrl(String? src) {
         if (src == null || src.isEmpty) return;
-        
+
         // Clean the URL first
         String cleaned = src.trim();
         if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
@@ -1336,10 +1827,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           cleaned = cleaned.substring(1, cleaned.length - 1);
         }
         cleaned = cleaned.trim();
-        
+
         // Skip invalid URLs
-        if (cleaned.isEmpty || 
-            cleaned.contains('data:image') || 
+        if (cleaned.isEmpty ||
+            cleaned.contains('data:image') ||
             cleaned.contains('spacer') ||
             cleaned.contains('pixel') ||
             cleaned.contains('1x1') ||
@@ -1354,17 +1845,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             (cleaned.endsWith('.svg') && !cleaned.contains('room-photo'))) {
           return;
         }
-        
+
         // Only accept room photos or images with common extensions
-        final isRoomPhoto = cleaned.contains('room-photo') || 
-                           cleaned.contains('/fit/room') ||
-                           cleaned.contains('room') && cleaned.contains('photo');
-        final hasImageExtension = cleaned.endsWith('.jpg') || 
-                                  cleaned.endsWith('.jpeg') || 
-                                  cleaned.endsWith('.png') ||
-                                  cleaned.endsWith('.webp') || 
-                                  cleaned.endsWith('.gif');
-        
+        final isRoomPhoto = cleaned.contains('room-photo') ||
+            cleaned.contains('/fit/room') ||
+            cleaned.contains('room') && cleaned.contains('photo');
+        final hasImageExtension = cleaned.endsWith('.jpg') ||
+            cleaned.endsWith('.jpeg') ||
+            cleaned.endsWith('.png') ||
+            cleaned.endsWith('.webp') ||
+            cleaned.endsWith('.gif');
+
         if (isRoomPhoto || hasImageExtension) {
           final absoluteUrl = convertToAbsoluteUrl(cleaned);
           // Proxy the URL for web platform to bypass CORS
@@ -1375,39 +1866,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           }
         }
       }
-      
+
       // First, try using regex to find images after Photo heading (more reliable)
       // Look for headings that contain "Photo" (not just exactly "Photo")
       final photoSectionPatterns = [
-        RegExp(r'<h3[^>]*>\s*Photo[^<]*</h3>', caseSensitive: false), // Exact "Photo"
-        RegExp(r'<h3[^>]*>[^<]*Photo[^<]*</h3>', caseSensitive: false), // Contains "Photo"
-        RegExp(r'<h4[^>]*>[^<]*Photo[^<]*</h4>', caseSensitive: false), // h4 with Photo
-        RegExp(r'<h2[^>]*>[^<]*Photo[^<]*</h2>', caseSensitive: false), // h2 with Photo
+        RegExp(r'<h3[^>]*>\s*Photo[^<]*</h3>',
+            caseSensitive: false), // Exact "Photo"
+        RegExp(r'<h3[^>]*>[^<]*Photo[^<]*</h3>',
+            caseSensitive: false), // Contains "Photo"
+        RegExp(r'<h4[^>]*>[^<]*Photo[^<]*</h4>',
+            caseSensitive: false), // h4 with Photo
+        RegExp(r'<h2[^>]*>[^<]*Photo[^<]*</h2>',
+            caseSensitive: false), // h2 with Photo
       ];
-      
+
       // Search for ALL photo sections (there might be multiple)
       for (final pattern in photoSectionPatterns) {
         final photoSectionMatches = pattern.allMatches(htmlContent);
         for (final photoSectionMatch in photoSectionMatches) {
           print('Found Photo heading, searching for images...');
-          
+
           // Get the content after the Photo header
           final photoSectionStart = photoSectionMatch.end;
           final photoSectionContent = htmlContent.substring(photoSectionStart);
-          
+
           // Find the next section (look for next <h3>, <h4>, <h2> or </section> to limit scope)
           final nextSectionPattern = RegExp(
             r'<h[1-6][^>]*>|</section>',
             caseSensitive: false,
           );
-          final nextSectionMatch = nextSectionPattern.firstMatch(photoSectionContent);
-          
+          final nextSectionMatch =
+              nextSectionPattern.firstMatch(photoSectionContent);
+
           // Limit search to content between Photo header and next section (or 20000 chars max)
           final searchLimit = nextSectionMatch != null
               ? math.min(nextSectionMatch.start, 20000)
               : math.min(photoSectionContent.length, 20000);
           final photoSection = photoSectionContent.substring(0, searchLimit);
-          
+
           // Extract all img tags - handle multiple formats
           final imgPatterns = [
             RegExp(r'<img[^>]*src\s*=\s*"([^"]+)"', caseSensitive: false),
@@ -1417,7 +1913,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             RegExp(r"<img[^>]*data-src\s*=\s*'([^']+)'", caseSensitive: false),
             RegExp(r'<img[^>]*data-src\s*=\s*([^\s>]+)', caseSensitive: false),
           ];
-          
+
           for (final imgPattern in imgPatterns) {
             final matches = imgPattern.allMatches(photoSection);
             for (final match in matches) {
@@ -1427,17 +1923,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           }
         }
       }
-      
+
       // If no Photo section found or no images found, try DOM parsing
       if (photoUrls.isEmpty) {
-        print('No Photo section found or no images in Photo section, trying broader search...');
-        
+        print(
+            'No Photo section found or no images in Photo section, trying broader search...');
+
         // Parse HTML using the html parser
         final document = html_parser.parse(htmlContent);
-        
+
         // Try to find Photo heading - look for any heading containing "photo"
         var photoHeading = document.querySelector('h3');
-        if (photoHeading == null || !photoHeading.text.toLowerCase().contains('photo')) {
+        if (photoHeading == null ||
+            !photoHeading.text.toLowerCase().contains('photo')) {
           // Search all h3, h4, h2 headings for ones containing "photo"
           final allH3s = document.querySelectorAll('h3');
           for (final h3 in allH3s) {
@@ -1467,121 +1965,133 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             }
           }
         }
-        
+
         if (photoHeading != null) {
           print('Found Photo heading in DOM, searching for images...');
-          
+
           // Get all elements after the Photo heading
           var parentElement = photoHeading.parent;
-          
+
           // Search in the parent's children after the Photo heading
           if (parentElement != null) {
             bool foundPhotoHeading = false;
             for (final child in parentElement.children) {
               if (foundPhotoHeading) {
-            // Look for img tags in this element and its descendants
-            final images = child.querySelectorAll('img');
-            for (final img in images) {
-              final src = img.attributes['src'];
-              if (src != null && src.isNotEmpty && !src.contains('data:image')) {
-                // Convert relative URLs to absolute
-                String absoluteUrl;
-                if (src.startsWith('http://') || src.startsWith('https://')) {
-                  absoluteUrl = src;
-                } else if (src.startsWith('//')) {
-                  absoluteUrl = 'https:$src';
-                } else if (src.startsWith('/')) {
-                  absoluteUrl = 'https://www.fit.vut.cz$src';
-                } else {
-                  absoluteUrl = 'https://www.fit.vut.cz/$src';
+                // Look for img tags in this element and its descendants
+                final images = child.querySelectorAll('img');
+                for (final img in images) {
+                  final src = img.attributes['src'];
+                  if (src != null &&
+                      src.isNotEmpty &&
+                      !src.contains('data:image')) {
+                    // Convert relative URLs to absolute
+                    String absoluteUrl;
+                    if (src.startsWith('http://') ||
+                        src.startsWith('https://')) {
+                      absoluteUrl = src;
+                    } else if (src.startsWith('//')) {
+                      absoluteUrl = 'https:$src';
+                    } else if (src.startsWith('/')) {
+                      absoluteUrl = 'https://www.fit.vut.cz$src';
+                    } else {
+                      absoluteUrl = 'https://www.fit.vut.cz/$src';
+                    }
+
+                    final cleanUrl = absoluteUrl.trim();
+                    if (!photoUrls.contains(cleanUrl)) {
+                      photoUrls.add(cleanUrl);
+                      print('Found photo URL: $cleanUrl');
+                    }
+                  }
+                  // Also check for data-src (lazy-loaded images)
+                  final dataSrc = img.attributes['data-src'];
+                  if (dataSrc != null &&
+                      dataSrc.isNotEmpty &&
+                      !dataSrc.contains('data:image')) {
+                    String absoluteUrl;
+                    if (dataSrc.startsWith('http://') ||
+                        dataSrc.startsWith('https://')) {
+                      absoluteUrl = dataSrc;
+                    } else if (dataSrc.startsWith('//')) {
+                      absoluteUrl = 'https:$dataSrc';
+                    } else if (dataSrc.startsWith('/')) {
+                      absoluteUrl = 'https://www.fit.vut.cz$dataSrc';
+                    } else {
+                      absoluteUrl = 'https://www.fit.vut.cz/$dataSrc';
+                    }
+
+                    final cleanUrl = absoluteUrl.trim();
+                    if (!photoUrls.contains(cleanUrl)) {
+                      photoUrls.add(cleanUrl);
+                      print('Found photo URL (data-src): $cleanUrl');
+                    }
+                  }
                 }
-                
-                final cleanUrl = absoluteUrl.trim();
-                if (!photoUrls.contains(cleanUrl)) {
-                  photoUrls.add(cleanUrl);
-                  print('Found photo URL: $cleanUrl');
+
+                // Also check if this element itself is an img tag
+                if (child.localName?.toLowerCase() == 'img') {
+                  final src = child.attributes['src'];
+                  if (src != null &&
+                      src.isNotEmpty &&
+                      !src.contains('data:image')) {
+                    String absoluteUrl;
+                    if (src.startsWith('http://') ||
+                        src.startsWith('https://')) {
+                      absoluteUrl = src;
+                    } else if (src.startsWith('//')) {
+                      absoluteUrl = 'https:$src';
+                    } else if (src.startsWith('/')) {
+                      absoluteUrl = 'https://www.fit.vut.cz$src';
+                    } else {
+                      absoluteUrl = 'https://www.fit.vut.cz/$src';
+                    }
+
+                    final cleanUrl = absoluteUrl.trim();
+                    if (!photoUrls.contains(cleanUrl)) {
+                      photoUrls.add(cleanUrl);
+                      print('Found photo URL: $cleanUrl');
+                    }
+                  }
+                  // Also check for data-src
+                  final dataSrc = child.attributes['data-src'];
+                  if (dataSrc != null &&
+                      dataSrc.isNotEmpty &&
+                      !dataSrc.contains('data:image')) {
+                    String absoluteUrl;
+                    if (dataSrc.startsWith('http://') ||
+                        dataSrc.startsWith('https://')) {
+                      absoluteUrl = dataSrc;
+                    } else if (dataSrc.startsWith('//')) {
+                      absoluteUrl = 'https:$dataSrc';
+                    } else if (dataSrc.startsWith('/')) {
+                      absoluteUrl = 'https://www.fit.vut.cz$dataSrc';
+                    } else {
+                      absoluteUrl = 'https://www.fit.vut.cz/$dataSrc';
+                    }
+
+                    final cleanUrl = absoluteUrl.trim();
+                    if (!photoUrls.contains(cleanUrl)) {
+                      photoUrls.add(cleanUrl);
+                      print('Found photo URL (data-src): $cleanUrl');
+                    }
+                  }
+                }
+
+                // Stop if we hit another h3 heading
+                if (child.localName?.toLowerCase() == 'h3' ||
+                    child.localName?.toLowerCase() == 'h2' ||
+                    child.localName?.toLowerCase() == 'h1') {
+                  break;
                 }
               }
-              // Also check for data-src (lazy-loaded images)
-              final dataSrc = img.attributes['data-src'];
-              if (dataSrc != null && dataSrc.isNotEmpty && !dataSrc.contains('data:image')) {
-                String absoluteUrl;
-                if (dataSrc.startsWith('http://') || dataSrc.startsWith('https://')) {
-                  absoluteUrl = dataSrc;
-                } else if (dataSrc.startsWith('//')) {
-                  absoluteUrl = 'https:$dataSrc';
-                } else if (dataSrc.startsWith('/')) {
-                  absoluteUrl = 'https://www.fit.vut.cz$dataSrc';
-                } else {
-                  absoluteUrl = 'https://www.fit.vut.cz/$dataSrc';
-                }
-                
-                final cleanUrl = absoluteUrl.trim();
-                if (!photoUrls.contains(cleanUrl)) {
-                  photoUrls.add(cleanUrl);
-                  print('Found photo URL (data-src): $cleanUrl');
-                }
-              }
-            }
-            
-            // Also check if this element itself is an img tag
-            if (child.localName?.toLowerCase() == 'img') {
-              final src = child.attributes['src'];
-              if (src != null && src.isNotEmpty && !src.contains('data:image')) {
-                String absoluteUrl;
-                if (src.startsWith('http://') || src.startsWith('https://')) {
-                  absoluteUrl = src;
-                } else if (src.startsWith('//')) {
-                  absoluteUrl = 'https:$src';
-                } else if (src.startsWith('/')) {
-                  absoluteUrl = 'https://www.fit.vut.cz$src';
-                } else {
-                  absoluteUrl = 'https://www.fit.vut.cz/$src';
-                }
-                
-                final cleanUrl = absoluteUrl.trim();
-                if (!photoUrls.contains(cleanUrl)) {
-                  photoUrls.add(cleanUrl);
-                  print('Found photo URL: $cleanUrl');
-                }
-              }
-              // Also check for data-src
-              final dataSrc = child.attributes['data-src'];
-              if (dataSrc != null && dataSrc.isNotEmpty && !dataSrc.contains('data:image')) {
-                String absoluteUrl;
-                if (dataSrc.startsWith('http://') || dataSrc.startsWith('https://')) {
-                  absoluteUrl = dataSrc;
-                } else if (dataSrc.startsWith('//')) {
-                  absoluteUrl = 'https:$dataSrc';
-                } else if (dataSrc.startsWith('/')) {
-                  absoluteUrl = 'https://www.fit.vut.cz$dataSrc';
-                } else {
-                  absoluteUrl = 'https://www.fit.vut.cz/$dataSrc';
-                }
-                
-                final cleanUrl = absoluteUrl.trim();
-                if (!photoUrls.contains(cleanUrl)) {
-                  photoUrls.add(cleanUrl);
-                  print('Found photo URL (data-src): $cleanUrl');
-                }
-              }
-            }
-            
-            // Stop if we hit another h3 heading
-            if (child.localName?.toLowerCase() == 'h3' || 
-                child.localName?.toLowerCase() == 'h2' || 
-                child.localName?.toLowerCase() == 'h1') {
-              break;
-            }
-          }
-          
+
               if (child == photoHeading) {
                 foundPhotoHeading = true;
               }
             }
           }
         }
-        
+
         // Final fallback: search all images on the page if still no photos found
         if (photoUrls.isEmpty) {
           print('Searching all images on the page as final fallback...');
@@ -1592,36 +2102,37 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           }
         }
       }
-      
+
       // Fallback: Use regex if HTML parsing didn't find images (duplicate - should be removed)
       if (photoUrls.isEmpty) {
         print('HTML parsing found no images, trying regex fallback...');
-        
+
         // Find the Photo section: look for <h3>Photo</h3>
         final photoSectionPattern = RegExp(
           r'<h3[^>]*>\s*Photo\s*</h3>',
           caseSensitive: false,
         );
-        
+
         final photoSectionMatch = photoSectionPattern.firstMatch(htmlContent);
         if (photoSectionMatch != null) {
           // Get the content after the Photo header
           final photoSectionStart = photoSectionMatch.end;
           final photoSectionContent = htmlContent.substring(photoSectionStart);
-          
+
           // Find the next section (look for next <h3> or </section> to limit scope)
           final nextSectionPattern = RegExp(
             r'<h[1-6][^>]*>|</section>',
             caseSensitive: false,
           );
-          final nextSectionMatch = nextSectionPattern.firstMatch(photoSectionContent);
-          
+          final nextSectionMatch =
+              nextSectionPattern.firstMatch(photoSectionContent);
+
           // Limit search to content between Photo header and next section (or 20000 chars max)
           final searchLimit = nextSectionMatch != null
               ? math.min(nextSectionMatch.start, 20000)
               : math.min(photoSectionContent.length, 20000);
           final photoSection = photoSectionContent.substring(0, searchLimit);
-          
+
           // Extract all img tags - handle multiple formats:
           // 1. src="..." (double quotes)
           // 2. src='...' (single quotes)
@@ -1637,15 +2148,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             RegExp(r"<img[^>]*data-src\s*=\s*'([^']+)'", caseSensitive: false),
             RegExp(r'<img[^>]*data-src\s*=\s*([^\s>]+)', caseSensitive: false),
           ];
-          
+
           for (final pattern in imgPatterns) {
             final matches = pattern.allMatches(photoSection);
             for (final match in matches) {
               final photoUrl = match.group(1);
-              if (photoUrl != null && photoUrl.isNotEmpty && !photoUrl.contains('data:image')) {
+              if (photoUrl != null &&
+                  photoUrl.isNotEmpty &&
+                  !photoUrl.contains('data:image')) {
                 // Convert relative URLs to absolute
                 String absoluteUrl;
-                if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+                if (photoUrl.startsWith('http://') ||
+                    photoUrl.startsWith('https://')) {
                   absoluteUrl = photoUrl;
                 } else if (photoUrl.startsWith('//')) {
                   absoluteUrl = 'https:$photoUrl';
@@ -1654,7 +2168,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 } else {
                   absoluteUrl = 'https://www.fit.vut.cz/$photoUrl';
                 }
-                
+
                 final cleanUrl = absoluteUrl.trim();
                 if (!photoUrls.contains(cleanUrl)) {
                   photoUrls.add(cleanUrl);
@@ -1665,7 +2179,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           }
         }
       }
-      
+
       // Debug: Print a sample of the photo section HTML if no photos found
       if (photoUrls.isEmpty) {
         print('No photos found. Checking HTML structure...');
@@ -1677,7 +2191,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         if (photoSectionMatch != null) {
           final sampleStart = photoSectionMatch.end;
           final sampleLength = math.min(1000, htmlContent.length - sampleStart);
-          print('Photo section sample (first $sampleLength chars): ${htmlContent.substring(sampleStart, sampleStart + sampleLength)}');
+          print(
+              'Photo section sample (first $sampleLength chars): ${htmlContent.substring(sampleStart, sampleStart + sampleLength)}');
         }
       }
 
@@ -1696,14 +2211,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         print('2. Use a backend proxy server to fetch the HTML');
         print('3. Contact FIT to add CORS headers to their API');
       } else {
-        print('This might be due to network connectivity, server blocking, or invalid URL');
-        print('Make sure you have internet connectivity and the URL is accessible');
+        print(
+            'This might be due to network connectivity, server blocking, or invalid URL');
+        print(
+            'Make sure you have internet connectivity and the URL is accessible');
       }
       return [];
     } on TimeoutException catch (e) {
       print('Timeout error fetching room photos: $e');
       print('URL: $roomUrl');
-      print('The request took too long. The server might be slow or unreachable.');
+      print(
+          'The request took too long. The server might be slow or unreachable.');
       return [];
     } on Exception catch (e) {
       print('Error extracting room photos: $e');
@@ -1731,6 +2249,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _searchController.dispose();
+    _startingPointController.dispose();
     _interactiveController.dispose();
     _pulseController.dispose();
     if (_zoomAnimationListener != null && _zoomAnimation != null) {
@@ -1859,7 +2378,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           mapBounds: Rect.fromLTRB(
                               _mapMinX, _mapMinY, _mapMaxX, _mapMaxY),
                           paths: _navigationPaths,
-                          trails: _userTrail.isEmpty ? [] : [_userTrail.toMapPath()],
+                          trails: _userTrail.isEmpty
+                              ? []
+                              : [_userTrail.toMapPath()],
                           currentLocationRoom: _currentLocationRoom,
                           destinationRoom: _destinationRoom,
                         ),
@@ -1883,6 +2404,90 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       right: 20,
       child: Column(
         children: [
+          // Starting point input field
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 5,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // Starting point input field
+                SizedBox(
+                  height: 45,
+                  child: TextFormField(
+                    controller: _startingPointController,
+                    autofocus: false,
+                    decoration: InputDecoration(
+                      hintText: 'Starting point (e.g., A109)',
+                      border: InputBorder.none,
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      prefixIcon: Icon(Icons.location_on,
+                          color: AppTheme.primaryColor, size: 20),
+                    ),
+                    onChanged: (value) {
+                      _updateStartingPointSuggestions(value);
+                    },
+                    onTap: () {
+                      setState(() {
+                        _showStartingPointSuggestions =
+                            _startingPointController.text.isNotEmpty;
+                      });
+                    },
+                    onEditingComplete: () {
+                      // Update current location when user finishes typing
+                      final roomId = _startingPointController.text.trim();
+                      if (roomId.isNotEmpty) {
+                        FocusScope.of(context).unfocus();
+                        setState(() {
+                          _showStartingPointSuggestions = false;
+                        });
+                        _setCurrentLocation(roomId);
+                      }
+                    },
+                  ),
+                ),
+
+                // Starting point suggestions dropdown
+                if (_showStartingPointSuggestions &&
+                    _startingPointSuggestions.isNotEmpty)
+                  Container(
+                    constraints: BoxConstraints(maxHeight: 200),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.only(
+                        bottomLeft: Radius.circular(20),
+                        bottomRight: Radius.circular(20),
+                      ),
+                      border: Border(
+                        top: BorderSide(color: Colors.grey[300]!, width: 1),
+                      ),
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _startingPointSuggestions.length,
+                      itemBuilder: (context, index) {
+                        final room = _startingPointSuggestions[index];
+                        return _buildStartingPointSuggestionItem(
+                            room, _startingPointController.text);
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          SizedBox(height: 8),
+
           // Autocomplete search field
           Container(
             width: double.infinity,
@@ -1901,47 +2506,134 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               children: [
                 // Search input field
                 SizedBox(
-                  height: 45,
-                  child: TextFormField(
-                    controller: _searchController,
-                    autofocus: false,
-                    decoration: InputDecoration(
-                      hintText: 'Type room name or ID to search...',
-                      border: InputBorder.none,
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      prefixIcon: Icon(Icons.search,
-                          color: AppTheme.primaryColor, size: 20),
-                      suffixIcon: _isSearching
-                          ? IconButton(
-                              icon: Icon(Icons.clear,
-                                  color: Colors.grey[600], size: 20),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() {
-                                  _isSearching = false;
-                                  _showSuggestions = false;
-                                  _searchSuggestions = [];
-                                });
-                                _performSearch(''); // Clear search results
-                              },
-                            )
-                          : null,
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        _isSearching = value.isNotEmpty;
-                        _showSuggestions = value.isNotEmpty;
-                      });
-                      _updateSuggestions(value);
-                      _performSearch(value); // Also perform search as user types
-                    },
-                    onTap: () {
-                      // Ensure keyboard appears when search input is tapped
-                      setState(() {
-                        _showSuggestions = _searchController.text.isNotEmpty;
-                      });
-                    },
+                  height: 60,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: TextFormField(
+                          controller: _searchController,
+                          autofocus: false,
+                          decoration: InputDecoration(
+                            hintText: 'Type room name or ID to search...',
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 14),
+                            prefixIcon: Icon(Icons.search,
+                                color: AppTheme.primaryColor, size: 22),
+                            suffixIcon: _isSearching
+                                ? IconButton(
+                                    icon: Icon(Icons.clear,
+                                        color: Colors.grey[600], size: 20),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() {
+                                        _isSearching = false;
+                                        _showSuggestions = false;
+                                        _searchSuggestions = [];
+                                        _selectedSearchRoom = null;
+                                      });
+                                      _performSearch(''); // Clear search results
+                                    },
+                                  )
+                                : null,
+                          ),
+                          onChanged: (value) {
+                            setState(() {
+                              _isSearching = value.isNotEmpty;
+                              _showSuggestions = value.isNotEmpty;
+                              _selectedSearchRoom = null;
+                            });
+                            _updateSuggestions(value);
+                            _performSearch(
+                                value); // Also perform search as user types
+                          },
+                          onTap: () {
+                            // Ensure keyboard appears when search input is tapped
+                            setState(() {
+                              _showSuggestions =
+                                  _searchController.text.isNotEmpty;
+                            });
+                          },
+                        ),
+                      ),
+
+                      // Overlay selected room details inside the input box (read-only layer)
+                      if (!_showSuggestions && _selectedSearchRoom != null)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            ignoring: true,
+                            child: Container(
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.room,
+                                      color: AppTheme.primaryColor, size: 22),
+                                  SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          _selectedSearchRoom!['id'] ?? '',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                        if ((_selectedSearchRoom!['title']
+                                                    ?.toString() ??
+                                                '')
+                                            .isNotEmpty)
+                                          Text(
+                                            _selectedSearchRoom!['title']
+                                                .toString(),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  SizedBox(width: 10),
+                                  Container(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primaryColor
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      _formatFloorDisplay(
+                                          _selectedSearchRoom!['floor_no']
+                                                  ?.toString() ??
+                                              ''),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: AppTheme.primaryColor,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
 
@@ -1964,7 +2656,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       itemCount: _searchSuggestions.length,
                       itemBuilder: (context, index) {
                         final room = _searchSuggestions[index];
-                        return _buildSuggestionItem(room, _searchController.text);
+                        return _buildSuggestionItem(
+                            room, _searchController.text);
                       },
                     ),
                   ),
@@ -2082,11 +2775,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Widget _buildNavigationInstructionsPanel() {
     // Show only first instruction in the bubble, or all when expanded
-    final primaryInstruction = _navigationInstructions.isNotEmpty 
-        ? _navigationInstructions.first 
-        : '';
+    final primaryInstruction =
+        _navigationInstructions.isNotEmpty ? _navigationInstructions.first : '';
     final hasMoreInstructions = _navigationInstructions.length > 1;
-    
+
     return Positioned(
       bottom: 70, // Above smaller bottom navigation bar
       right: 12, // Positioned on the right side
@@ -2095,15 +2787,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           // Expand to show all instructions in a larger bubble
           if (hasMoreInstructions) {
             setState(() {
-              _navigationInstructionsExpanded = !_navigationInstructionsExpanded;
+              _navigationInstructionsExpanded =
+                  !_navigationInstructionsExpanded;
             });
           }
         },
         child: Container(
           constraints: BoxConstraints(
             maxWidth: _navigationInstructionsExpanded ? 260 : 180,
-            maxHeight: _navigationInstructionsExpanded 
-                ? MediaQuery.of(context).size.height * 0.25 
+            maxHeight: _navigationInstructionsExpanded
+                ? MediaQuery.of(context).size.height * 0.25
                 : double.infinity,
           ),
           decoration: BoxDecoration(
@@ -2188,7 +2881,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         child: SingleChildScrollView(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
-                            children: _navigationInstructions.map((instruction) {
+                            children:
+                                _navigationInstructions.map((instruction) {
                               return Padding(
                                 padding: EdgeInsets.only(bottom: 4),
                                 child: Row(
@@ -2737,7 +3431,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.error, color: Colors.grey[600], size: 32),
+                                Icon(Icons.error,
+                                    color: Colors.grey[600], size: 32),
                                 SizedBox(height: 8),
                                 Text(
                                   'Failed to load photo',
@@ -2762,7 +3457,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               color: Colors.grey[200],
                               child: Center(
                                 child: CircularProgressIndicator(
-                                  value: loadingProgress.expectedTotalBytes != null
+                                  value: loadingProgress.expectedTotalBytes !=
+                                          null
                                       ? loadingProgress.cumulativeBytesLoaded /
                                           loadingProgress.expectedTotalBytes!
                                       : null,
@@ -2777,7 +3473,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.error, color: Colors.grey[600], size: 32),
+                                    Icon(Icons.error,
+                                        color: Colors.grey[600], size: 32),
                                     SizedBox(height: 8),
                                     Text(
                                       'Failed to load photo',
@@ -2841,7 +3538,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildActionButtonsSection() {
-    final isCurrentLocation = _currentLocationRoom != null && 
+    final isCurrentLocation = _currentLocationRoom != null &&
         _selectedRoom != null &&
         _currentLocationRoom!['id'] == _selectedRoom!['id'];
     final hasNavigationPath = _navigationPaths.isNotEmpty;
@@ -3014,7 +3711,7 @@ class BuildingMapPainter extends CustomPainter {
     for (final path in paths) {
       _drawPath(canvas, path, size);
     }
-    
+
     for (final trail in trails) {
       _drawPath(canvas, trail, size);
     }
@@ -3023,13 +3720,13 @@ class BuildingMapPainter extends CustomPainter {
     // (not for search highlights - they only get color highlighting)
     for (final room in roomData) {
       final roomId = room['id'] as String;
-      final isCurrentLocation = currentLocationRoom != null &&
-          currentLocationRoom!['id'] == roomId;
-      
+      final isCurrentLocation =
+          currentLocationRoom != null && currentLocationRoom!['id'] == roomId;
+
       // Check if this is the destination room (clicked for navigation)
-      final isDestination = destinationRoom != null &&
-          destinationRoom!['id'] == roomId;
-      
+      final isDestination =
+          destinationRoom != null && destinationRoom!['id'] == roomId;
+
       if (isCurrentLocation || isDestination) {
         final coords = room['coords'] as List<dynamic>;
         if (isCurrentLocation) {
@@ -3043,7 +3740,8 @@ class BuildingMapPainter extends CustomPainter {
     }
   }
 
-  void _drawRoom(Canvas canvas, Map<String, dynamic> room, Size canvasSize, {bool drawMarker = true}) {
+  void _drawRoom(Canvas canvas, Map<String, dynamic> room, Size canvasSize,
+      {bool drawMarker = true}) {
     final coords = room['coords'] as List<dynamic>;
     final roomId = room['id'] as String;
     final title = room['title'] as String;
@@ -3115,12 +3813,12 @@ class BuildingMapPainter extends CustomPainter {
   Color _getRoomColor(String roomId, String title) {
     final lowerTitle = title.toLowerCase();
     final lowerRoomId = roomId.toLowerCase();
-    
+
     // Check for doors first
     if (lowerTitle.contains('door') || lowerRoomId.startsWith('door_')) {
       return Colors.grey[300]!; // Light grey for doors
     }
-    
+
     // Determine color based on room type
     if (lowerTitle.contains('staircase')) return Colors.red[600]!;
     if (lowerTitle.contains('office')) return Colors.green[500]!;
@@ -3181,7 +3879,7 @@ class BuildingMapPainter extends CustomPainter {
     double maxMappedX = double.negativeInfinity;
     double minMappedY = double.infinity;
     double maxMappedY = double.negativeInfinity;
-    
+
     for (final coord in coords) {
       final coordList = coord as List<dynamic>;
       if (coordList.length >= 2) {
@@ -3196,7 +3894,7 @@ class BuildingMapPainter extends CustomPainter {
 
         centerX += mappedX;
         centerY += mappedY;
-        
+
         // Track bounding box in canvas pixels
         minMappedX = math.min(minMappedX, mappedX);
         maxMappedX = math.max(maxMappedX, mappedX);
@@ -3211,13 +3909,14 @@ class BuildingMapPainter extends CustomPainter {
     final roomWidthInPixels = maxMappedX - minMappedX;
     final roomHeightInPixels = maxMappedY - minMappedY;
     final roomSizeInPixels = math.sqrt(roomWidthInPixels * roomHeightInPixels);
-    
+
     // Calculate font size that maintains constant ratio to room size
     // Font scales with zoom because canvas scales with zoom (InteractiveViewer scales everything)
     // So we base font size directly on room's pixel dimensions to maintain ratio
-    const fontToRoomRatio = 0.15; // Font size as ratio of room's linear dimension
+    const fontToRoomRatio =
+        0.15; // Font size as ratio of room's linear dimension
     double adaptiveFontSize = roomSizeInPixels * fontToRoomRatio;
-    
+
     // Ensure readable bounds
     adaptiveFontSize = adaptiveFontSize.clamp(8.0, 36.0);
 
@@ -3261,7 +3960,6 @@ class BuildingMapPainter extends CustomPainter {
     return (area / 2).abs();
   }
 
-
   void _drawGoogleMarker(Canvas canvas, List<dynamic> coords, Size canvasSize) {
     if (coords.isEmpty) return;
 
@@ -3290,15 +3988,17 @@ class BuildingMapPainter extends CustomPainter {
     const baseMarkerSize = 40.0; // Google Maps standard size
     final zoomAdjustedSize = baseMarkerSize / zoomLevel.clamp(0.5, 3.0);
     final markerSize = zoomAdjustedSize * pulseValue;
-    
+
     // Pin tip is at the actual location point (exact Google Maps behavior)
     final pinTipX = centerX;
     final pinTipY = centerY;
-    
+
     // Google Maps pin dimensions - circular head is ~2/3, triangle is ~1/3
     final pinRadius = markerSize * 0.25; // Radius of the circular head
-    final pinHeight = markerSize * 0.65; // Total height from tip to top of circle
-    final pinHeadCenterY = pinTipY - pinHeight + pinRadius; // Center of circular head
+    final pinHeight =
+        markerSize * 0.65; // Total height from tip to top of circle
+    final pinHeadCenterY =
+        pinTipY - pinHeight + pinRadius; // Center of circular head
     final triangleWidth = pinRadius * 0.5; // Width of triangle base
 
     // Draw shadow (Google Maps style - offset down and right)
@@ -3323,25 +4023,26 @@ class BuildingMapPainter extends CustomPainter {
 
     // Draw pin body - Red color (Google Maps red marker style)
     final pinPaint = Paint()
-      ..color = Color(0xFFEA4335).withValues(alpha: pulseValue) // Google Maps red
+      ..color =
+          Color(0xFFEA4335).withValues(alpha: pulseValue) // Google Maps red
       ..style = PaintingStyle.fill;
 
     // Create exact Google Maps teardrop/pin path
     final pinPath = Path();
-    
+
     // Circular head (top part) - forms the main body
     pinPath.addOval(Rect.fromCircle(
       center: Offset(pinTipX, pinHeadCenterY),
       radius: pinRadius,
     ));
-    
+
     // Triangular point (bottom) - connects circle to tip
     // The triangle is narrower than the circle for that classic Google pin look
     pinPath.moveTo(pinTipX, pinHeadCenterY + pinRadius);
     pinPath.lineTo(pinTipX + triangleWidth, pinTipY);
     pinPath.lineTo(pinTipX - triangleWidth, pinTipY);
     pinPath.close();
-    
+
     canvas.drawPath(pinPath, pinPaint);
 
     // Draw white border (Google Maps style - subtle but visible)
@@ -3385,7 +4086,8 @@ class BuildingMapPainter extends CustomPainter {
         ],
         stops: [0.0, 1.0],
       ).createShader(Rect.fromCircle(
-        center: Offset(pinTipX - pinRadius * 0.4, pinHeadCenterY - pinRadius * 0.4),
+        center:
+            Offset(pinTipX - pinRadius * 0.4, pinHeadCenterY - pinRadius * 0.4),
         radius: pinRadius * 0.8,
       ))
       ..style = PaintingStyle.fill;
@@ -3398,7 +4100,8 @@ class BuildingMapPainter extends CustomPainter {
   }
 
   /// Draw current location marker (green pin)
-  void _drawCurrentLocationMarker(Canvas canvas, List<dynamic> coords, Size canvasSize) {
+  void _drawCurrentLocationMarker(
+      Canvas canvas, List<dynamic> coords, Size canvasSize) {
     if (coords.isEmpty) return;
 
     // Calculate center point of the room
@@ -3426,7 +4129,7 @@ class BuildingMapPainter extends CustomPainter {
     const baseMarkerSize = 40.0;
     final zoomAdjustedSize = baseMarkerSize / zoomLevel.clamp(0.5, 3.0);
     final markerSize = zoomAdjustedSize * pulseValue;
-    
+
     final pinTipX = centerX;
     final pinTipY = centerY;
     final pinRadius = markerSize * 0.25;
@@ -3465,7 +4168,7 @@ class BuildingMapPainter extends CustomPainter {
     pinPath.lineTo(pinTipX + triangleWidth, pinTipY);
     pinPath.lineTo(pinTipX - triangleWidth, pinTipY);
     pinPath.close();
-    
+
     canvas.drawPath(pinPath, pinPaint);
 
     // Draw white border
@@ -3506,9 +4209,12 @@ class BuildingMapPainter extends CustomPainter {
       return;
     }
 
-    print('Drawing path with ${path.points.length} points, color: ${path.color}, width: ${path.width}');
-    print('Map bounds: left=${mapBounds.left}, top=${mapBounds.top}, width=${mapBounds.width}, height=${mapBounds.height}');
-    print('Canvas size: width=${canvasSize.width}, height=${canvasSize.height}');
+    print(
+        'Drawing path with ${path.points.length} points, color: ${path.color}, width: ${path.width}');
+    print(
+        'Map bounds: left=${mapBounds.left}, top=${mapBounds.top}, width=${mapBounds.width}, height=${mapBounds.height}');
+    print(
+        'Canvas size: width=${canvasSize.width}, height=${canvasSize.height}');
 
     // Map path points from pixel coordinates to canvas space
     final mappedPoints = path.points.map((point) {
@@ -3516,7 +4222,8 @@ class BuildingMapPainter extends CustomPainter {
           ((point.dx - mapBounds.left) / mapBounds.width) * canvasSize.width;
       final mappedY =
           ((point.dy - mapBounds.top) / mapBounds.height) * canvasSize.height;
-      print('Original: (${point.dx}, ${point.dy}) -> Mapped: (${mappedX}, ${mappedY})');
+      print(
+          'Original: (${point.dx}, ${point.dy}) -> Mapped: (${mappedX}, ${mappedY})');
       return Offset(mappedX, mappedY);
     }).toList();
 
@@ -3527,7 +4234,7 @@ class BuildingMapPainter extends CustomPainter {
     // Create right-angled path (Google Maps style)
     final pathObj = Path();
     pathObj.moveTo(rightAngledPoints[0].dx, rightAngledPoints[0].dy);
-    
+
     for (int i = 1; i < rightAngledPoints.length; i++) {
       pathObj.lineTo(rightAngledPoints[i].dx, rightAngledPoints[i].dy);
     }
@@ -3553,20 +4260,20 @@ class BuildingMapPainter extends CustomPainter {
     // Don't draw arrows - they clutter the path
     // Arrows removed per user request
   }
-  
+
   /// Convert a path with potential diagonals to a strictly right-angled path
   List<Offset> _convertToRightAngledPath(List<Offset> points) {
     if (points.length < 2) return points;
-    
+
     final rightAngledPoints = <Offset>[points[0]];
-    
+
     for (int i = 1; i < points.length; i++) {
       final prev = rightAngledPoints.last;
       final current = points[i];
-      
+
       final dx = current.dx - prev.dx;
       final dy = current.dy - prev.dy;
-      
+
       // If both dx and dy are non-zero, create a right angle
       if (dx.abs() > 0.1 && dy.abs() > 0.1) {
         // Move horizontally first, then vertically (or vice versa based on which is larger)
@@ -3586,31 +4293,36 @@ class BuildingMapPainter extends CustomPainter {
         }
       }
     }
-    
+
     return rightAngledPoints;
   }
-  
+
   /// Draw a dashed path with right angles
-  void _drawDashedPathRightAngled(Canvas canvas, List<Offset> points, Paint paint) {
+  void _drawDashedPathRightAngled(
+      Canvas canvas, List<Offset> points, Paint paint) {
     const double dashLength = 10.0;
     const double gapLength = 5.0;
-    
+
     for (int i = 0; i < points.length - 1; i++) {
       final start = points[i];
       final end = points[i + 1];
-      
+
       // Create right-angled segments
       final dx = end.dx - start.dx;
       final dy = end.dy - start.dy;
-      
+
       if (dx.abs() > 0.1 && dy.abs() > 0.1) {
         // Right-angled: draw two segments
         if (dx.abs() > dy.abs()) {
-          _drawDashedLine(canvas, start, Offset(end.dx, start.dy), paint, dashLength, gapLength);
-          _drawDashedLine(canvas, Offset(end.dx, start.dy), end, paint, dashLength, gapLength);
+          _drawDashedLine(canvas, start, Offset(end.dx, start.dy), paint,
+              dashLength, gapLength);
+          _drawDashedLine(canvas, Offset(end.dx, start.dy), end, paint,
+              dashLength, gapLength);
         } else {
-          _drawDashedLine(canvas, start, Offset(start.dx, end.dy), paint, dashLength, gapLength);
-          _drawDashedLine(canvas, Offset(start.dx, end.dy), end, paint, dashLength, gapLength);
+          _drawDashedLine(canvas, start, Offset(start.dx, end.dy), paint,
+              dashLength, gapLength);
+          _drawDashedLine(canvas, Offset(start.dx, end.dy), end, paint,
+              dashLength, gapLength);
         }
       } else {
         // Straight line
@@ -3618,27 +4330,32 @@ class BuildingMapPainter extends CustomPainter {
       }
     }
   }
-  
+
   /// Draw a dotted path with right angles
-  void _drawDottedPathRightAngled(Canvas canvas, List<Offset> points, Paint paint) {
+  void _drawDottedPathRightAngled(
+      Canvas canvas, List<Offset> points, Paint paint) {
     const double dotSpacing = 8.0;
-    
+
     for (int i = 0; i < points.length - 1; i++) {
       final start = points[i];
       final end = points[i + 1];
-      
+
       // Create right-angled segments
       final dx = end.dx - start.dx;
       final dy = end.dy - start.dy;
-      
+
       if (dx.abs() > 0.1 && dy.abs() > 0.1) {
         // Right-angled: draw two segments
         if (dx.abs() > dy.abs()) {
-          _drawDottedLine(canvas, start, Offset(end.dx, start.dy), paint, dotSpacing);
-          _drawDottedLine(canvas, Offset(end.dx, start.dy), end, paint, dotSpacing);
+          _drawDottedLine(
+              canvas, start, Offset(end.dx, start.dy), paint, dotSpacing);
+          _drawDottedLine(
+              canvas, Offset(end.dx, start.dy), end, paint, dotSpacing);
         } else {
-          _drawDottedLine(canvas, start, Offset(start.dx, end.dy), paint, dotSpacing);
-          _drawDottedLine(canvas, Offset(start.dx, end.dy), end, paint, dotSpacing);
+          _drawDottedLine(
+              canvas, start, Offset(start.dx, end.dy), paint, dotSpacing);
+          _drawDottedLine(
+              canvas, Offset(start.dx, end.dy), end, paint, dotSpacing);
         }
       } else {
         // Straight line
@@ -3646,15 +4363,17 @@ class BuildingMapPainter extends CustomPainter {
       }
     }
   }
-  
+
   /// Helper to draw dashed line between two points
-  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint, double dashLength, double gapLength) {
-    final distance = math.sqrt(math.pow(end.dx - start.dx, 2) + math.pow(end.dy - start.dy, 2));
+  void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint,
+      double dashLength, double gapLength) {
+    final distance = math
+        .sqrt(math.pow(end.dx - start.dx, 2) + math.pow(end.dy - start.dy, 2));
     if (distance < 0.1) return;
-    
+
     final unitX = (end.dx - start.dx) / distance;
     final unitY = (end.dy - start.dy) / distance;
-    
+
     double currentDistance = 0;
     while (currentDistance < distance) {
       final dashStart = Offset(
@@ -3666,20 +4385,22 @@ class BuildingMapPainter extends CustomPainter {
         start.dx + unitX * dashEndDistance,
         start.dy + unitY * dashEndDistance,
       );
-      
+
       canvas.drawLine(dashStart, dashEnd, paint);
       currentDistance += dashLength + gapLength;
     }
   }
-  
+
   /// Helper to draw dotted line between two points
-  void _drawDottedLine(Canvas canvas, Offset start, Offset end, Paint paint, double dotSpacing) {
-    final distance = math.sqrt(math.pow(end.dx - start.dx, 2) + math.pow(end.dy - start.dy, 2));
+  void _drawDottedLine(
+      Canvas canvas, Offset start, Offset end, Paint paint, double dotSpacing) {
+    final distance = math
+        .sqrt(math.pow(end.dx - start.dx, 2) + math.pow(end.dy - start.dy, 2));
     if (distance < 0.1) return;
-    
+
     final unitX = (end.dx - start.dx) / distance;
     final unitY = (end.dy - start.dy) / distance;
-    
+
     double currentDistance = 0;
     while (currentDistance < distance) {
       final dot = Offset(
@@ -3765,8 +4486,10 @@ class _BubbleTailPainter extends CustomPainter {
     // Draw a small curved tail pointing down-right (Google Maps style)
     path.moveTo(size.width * 0.3, 0);
     path.quadraticBezierTo(
-      size.width * 0.5, size.height * 0.3,
-      size.width * 0.7, size.height * 0.6,
+      size.width * 0.5,
+      size.height * 0.3,
+      size.width * 0.7,
+      size.height * 0.6,
     );
     path.lineTo(size.width, size.height);
     path.lineTo(size.width * 0.5, size.height);

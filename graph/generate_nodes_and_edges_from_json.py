@@ -120,6 +120,45 @@ def polygon_clip(subject, clip):
     return output
 
 
+def polygons_adjacent(poly1, poly2, threshold_ratio=0.01):
+    """
+    Check if two polygons are adjacent (touching or overlapping).
+    Returns True if they share a boundary or overlap significantly.
+    threshold_ratio: minimum overlap ratio to consider adjacent (default 1%)
+    """
+    if not poly1 or not poly2 or len(poly1) < 3 or len(poly2) < 3:
+        return False
+    
+    area1 = polygon_area(poly1)
+    area2 = polygon_area(poly2)
+    
+    if area1 == 0 or area2 == 0:
+        return False
+    
+    # Check for overlap using polygon clipping
+    inter = polygon_clip(poly1, poly2)
+    if inter:
+        inter_area = polygon_area(inter)
+        # Consider adjacent if there's any overlap (they share space)
+        # or if intersection area is significant relative to smaller polygon
+        min_area = min(area1, area2)
+        if inter_area >= min_area * threshold_ratio:
+            return True
+    
+    # Check if any vertex of one polygon is on or near the boundary of the other
+    # Use a larger tolerance for boundary detection (GPS coordinates are small)
+    boundary_tolerance = EPS * 1000  # Larger tolerance for GPS coordinates
+    for pt in poly1:
+        if on_polygon_boundary(pt[0], pt[1], poly2, boundary_tolerance):
+            return True
+    
+    for pt in poly2:
+        if on_polygon_boundary(pt[0], pt[1], poly1, boundary_tolerance):
+            return True
+    
+    return False
+
+
 # -------------------------------------------------------
 # Load JSON
 # -------------------------------------------------------
@@ -160,6 +199,8 @@ for entry in data:
         t = "elevator"
     elif "staircase" in title:
         t = "staircase"
+    elif "extra_area" in title or object_id.startswith("extra_"):
+        t = "corridor"  # Mark extra areas as corridors
     else:
         t = "normal"
 
@@ -224,6 +265,48 @@ for floor, group in floors.items():
                 edges.add((nA["id"], nB["id"], floor))
                 if BIDIR:
                     edges.add((nB["id"], nA["id"], floor))
+
+
+# -------------------------------------------------------
+# BUILD EDGES (corridors and adjacent rooms)
+# Connect corridors (extra areas) to each other and to adjacent rooms
+# -------------------------------------------------------
+
+for floor, group in floors.items():
+    nodes = group["nodes"]
+    
+    # Separate corridors from regular rooms
+    corridors = [n for n in nodes if n["type"] == "corridor"]
+    regular_rooms = [n for n in nodes if n["type"] == "normal"]
+    
+    # Connect corridors to each other if they're adjacent
+    for i in range(len(corridors)):
+        for j in range(i+1, len(corridors)):
+            corrA = corridors[i]
+            corrB = corridors[j]
+            
+            if not corrA["pts"] or not corrB["pts"]:
+                continue
+            
+            if polygons_adjacent(corrA["pts"], corrB["pts"]):
+                edges.add((corrA["id"], corrB["id"], floor))
+                if BIDIR:
+                    edges.add((corrB["id"], corrA["id"], floor))
+    
+    # Connect corridors to adjacent rooms
+    for corridor in corridors:
+        if not corridor["pts"]:
+            continue
+        
+        for room in regular_rooms:
+            if not room["pts"]:
+                continue
+            
+            # Check if room touches corridor
+            if polygons_adjacent(room["pts"], corridor["pts"]):
+                edges.add((room["id"], corridor["id"], floor))
+                if BIDIR:
+                    edges.add((corridor["id"], room["id"], floor))
 
 
 # -------------------------------------------------------

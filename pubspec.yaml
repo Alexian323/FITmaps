@@ -32,6 +32,7 @@ flutter:
     - assets/floors/
     - data/parsed_data/
     - data/raw_htmls/
+    - graph/
 
 flutter_launcher_icons:
   android: true
